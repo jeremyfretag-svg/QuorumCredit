@@ -155,7 +155,10 @@ pub enum DataKey {
     BorrowerCollateral(Address), // borrower → i128 collateral amount deposited
     BorrowerCollateralToken(Address), // borrower → Address token used for collateral
     InsurancePool,           // i128 total funds contributed to the insurance pool
-    InsuranceClaim(u64),     // loan_id → Address of voucher who claimed (prevents double-claim)
+    InsuranceClaim(u64),     // loan_id → bool: has any claim been made (legacy single-claim guard)
+    InsuranceFeeBps,         // u32: protocol fee routed to insurance pool per loan (default 50 = 0.5%)
+    InsuranceCoverageBps,    // u32: max payout as % of slashed stake (default 2500 = 25%)
+    InsuranceVoucherClaim(u64, Address), // (loan_id, voucher) → i128 amount already claimed
     VouchHistory(Address, Address, Address), // (borrower, voucher, token) → Vec<VouchHistoryEntry>
     VouchDelegation(Address, Address, Address), // (borrower, original_voucher, token) → Address (delegate)
     YieldReserve,            // i128 balance of the yield reserve
