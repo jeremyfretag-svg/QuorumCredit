@@ -69,6 +69,15 @@ pub const DECREASE_STAKE_TIMELOCK: u64 = 7 * 24 * 60 * 60;
 /// Withdrawal request timelock delay, in seconds (24 hours).
 pub const WITHDRAWAL_TIMELOCK_DELAY: u64 = 24 * 60 * 60;
 
+/// Default protocol fee contributed to the insurance pool on each loan disbursement (50 bps = 0.5%).
+pub const DEFAULT_INSURANCE_FEE_BPS: u32 = 50;
+
+/// Default maximum insurance payout as a fraction of the voucher's slashed stake (2500 bps = 25%).
+pub const DEFAULT_INSURANCE_COVERAGE_BPS: u32 = 2_500;
+
+/// Fraction of slashed funds automatically routed to the insurance pool (2000 bps = 20%).
+pub const SLASH_TO_INSURANCE_BPS: u32 = 2_000;
+
 // ── Loan Extension ────────────────────────────────────────────────────────────
 
 /// A pending loan extension request. Created by the borrower; approved by vouchers.
@@ -149,7 +158,10 @@ pub enum DataKey {
     BorrowerCollateral(Address), // borrower → i128 collateral amount deposited
     BorrowerCollateralToken(Address), // borrower → Address token used for collateral
     InsurancePool,           // i128 total funds contributed to the insurance pool
-    InsuranceClaim(u64),     // loan_id → Address of voucher who claimed (prevents double-claim)
+    InsuranceClaim(u64),     // loan_id → bool: has any claim been made (legacy single-claim guard)
+    InsuranceFeeBps,         // u32: protocol fee routed to insurance pool per loan (default 50 = 0.5%)
+    InsuranceCoverageBps,    // u32: max payout as % of slashed stake (default 2500 = 25%)
+    InsuranceVoucherClaim(u64, Address), // (loan_id, voucher) → i128 amount already claimed
     VouchHistory(Address, Address, Address), // (borrower, voucher, token) → Vec<VouchHistoryEntry>
     VouchDelegation(Address, Address, Address), // (borrower, original_voucher, token) → Address (delegate)
     YieldReserve,            // i128 balance of the yield reserve
