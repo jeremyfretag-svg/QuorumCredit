@@ -10,6 +10,8 @@ use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, Env, Str
 
 #[cfg(test)]
 mod withdrawal_queue_test;
+#[cfg(test)]
+mod vouch_age_yield_test;
 
 use crate::errors::ContractError;
 use crate::helpers::{config, get_active_loan_record, has_active_loan, require_allowed_token, require_not_paused};

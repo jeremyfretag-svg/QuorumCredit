@@ -5,12 +5,50 @@ use crate::helpers::{
 };
 use crate::reputation::ReputationNftExternalClient;
 use crate::types::{
-    DataKey, LoanRecord, LoanStatus, VouchRecord, BPS_DENOMINATOR,
+    DataKey, LoanRecord, LoanStatus, VouchRecord, YieldDistributionEntry, BPS_DENOMINATOR,
     DEFAULT_REFERRAL_BONUS_BPS, SLASH_ESCROW_PERIOD,
+    VOUCH_AGE_BONUS_MIN_SECS, VOUCH_AGE_BONUS_BPS_PER_PERIOD,
+    VOUCH_AGE_BONUS_PERIOD_SECS, VOUCH_AGE_BONUS_MAX_BPS, REPUTATION_BONUS_MAX_BPS,
 };
 use soroban_sdk::{panic_with_error, symbol_short, Address, Env, Vec};
 
-/// Calculate dynamic yield
+/// Compute the yield rate (in bps) for a single vouch, incorporating:
+/// - base yield from config
+/// - vouch-age bonus: +25 bps per 30-day period the vouch has been active (capped at 200 bps)
+/// - borrower reputation bonus: up to +100 bps based on successful repayment history
+pub fn vouch_yield_bps(env: &Env, vouch: &VouchRecord, borrower: &Address, now: u64) -> i128 {
+    let base_bps = config(env).yield_bps;
+
+    // ── Vouch-age bonus ───────────────────────────────────────────────────────
+    let age_secs = now.saturating_sub(vouch.vouch_timestamp);
+    let age_bonus = if age_secs >= VOUCH_AGE_BONUS_MIN_SECS {
+        let periods = (age_secs / VOUCH_AGE_BONUS_PERIOD_SECS) as i128;
+        (periods * VOUCH_AGE_BONUS_BPS_PER_PERIOD).min(VOUCH_AGE_BONUS_MAX_BPS)
+    } else {
+        0
+    };
+
+    // ── Borrower reputation bonus ─────────────────────────────────────────────
+    // Successful repayments → higher bonus; defaults → penalty.
+    let repayment_count: i128 = env
+        .storage()
+        .persistent()
+        .get::<DataKey, u32>(&DataKey::RepaymentCount(borrower.clone()))
+        .unwrap_or(0) as i128;
+    let default_count: i128 = env
+        .storage()
+        .persistent()
+        .get::<DataKey, u32>(&DataKey::DefaultCount(borrower.clone()))
+        .unwrap_or(0) as i128;
+    // +10 bps per successful repayment, -20 bps per default, capped at [0, REPUTATION_BONUS_MAX_BPS]
+    let rep_bonus = ((repayment_count * 10) - (default_count * 20))
+        .max(0)
+        .min(REPUTATION_BONUS_MAX_BPS);
+
+    (base_bps + age_bonus + rep_bonus).max(0)
+}
+
+/// Calculate dynamic yield (legacy — used for backward-compat; prefer vouch_yield_bps per vouch).
 pub fn calculate_dynamic_yield(env: &Env, borrower: &Address) -> i128 {
     let base_bps = config(env).yield_bps;
 
@@ -72,8 +110,23 @@ pub fn request_loan(
     let now = env.ledger().timestamp();
     let loan_id = next_loan_id(&env);
 
-    let yield_bps = calculate_dynamic_yield(&env, &borrower);
-    let total_yield = amount * yield_bps / 10_000;
+    // ── Per-vouch yield (age + reputation aware) ──────────────────────────────
+    // Compute each voucher's individual yield share and store it for repayment.
+    let mut yield_distribution: Vec<YieldDistributionEntry> = Vec::new(&env);
+    let mut total_yield: i128 = 0;
+
+    for v in vouches.iter() {
+        if v.token != token_addr {
+            continue;
+        }
+        let rate = vouch_yield_bps(&env, &v, &borrower, now);
+        let vouch_yield = amount * v.stake / total_stake * rate / 10_000;
+        total_yield += vouch_yield;
+        yield_distribution.push_back(YieldDistributionEntry {
+            voucher: v.voucher.clone(),
+            yield_amount: vouch_yield,
+        });
+    }
 
     let loan = LoanRecord {
         id: loan_id,
@@ -96,6 +149,7 @@ pub fn request_loan(
 
     env.storage().persistent().set(&DataKey::Loan(loan_id), &loan);
     env.storage().persistent().set(&DataKey::ActiveLoan(borrower.clone()), &loan_id);
+    env.storage().persistent().set(&DataKey::YieldDistribution(loan_id), &yield_distribution);
 
     token.transfer(&env.current_contract_address(), &borrower, &amount);
 
@@ -151,32 +205,43 @@ pub fn repay(env: Env, borrower: Address, payment: i128) -> Result<(), ContractE
             .get(&DataKey::Vouches(borrower.clone()))
             .unwrap_or(Vec::new(&env));
 
+        // Load the per-vouch yield distribution locked in at disbursement.
+        let yield_dist: Vec<YieldDistributionEntry> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::YieldDistribution(loan.id))
+            .unwrap_or(Vec::new(&env));
+
+        // Any penalty is distributed proportionally to stake (fallback).
         let total_stake: i128 = vouches
             .iter()
             .filter(|v| v.token == loan.token_address)
             .map(|v| v.stake)
             .sum();
 
-        let total_yield_pool = loan.total_yield + penalty;
-
         for v in vouches.iter() {
             if v.token != loan.token_address {
                 continue;
             }
 
-            let share = if total_stake > 0 {
-                total_yield_pool * v.stake / total_stake
+            // Per-vouch yield from the distribution locked at disbursement.
+            let vouch_yield = yield_dist
+                .iter()
+                .find(|e| e.voucher == v.voucher)
+                .map(|e| e.yield_amount)
+                .unwrap_or(0);
+
+            // Penalty share is proportional to stake.
+            let penalty_share = if total_stake > 0 {
+                penalty * v.stake / total_stake
             } else {
                 0
             };
 
-            token.transfer(
-                &env.current_contract_address(),
-                &v.voucher,
-                &(v.stake + share),
-            );
+            let payout = v.stake + vouch_yield + penalty_share;
+            token.transfer(&env.current_contract_address(), &v.voucher, &payout);
 
-            // Issue #602: Update voucher reputation stats on successful repayment.
+            // Update voucher reputation stats.
             let mut stats: crate::types::VoucherStats = env
                 .storage()
                 .persistent()
@@ -188,11 +253,21 @@ pub fn repay(env: Env, borrower: Address, payment: i128) -> Result<(), ContractE
                     total_slashed: 0,
                 });
             stats.successful_vouches += 1;
-            stats.total_yield_earned += voucher_yield;
+            stats.total_yield_earned += vouch_yield;
             env.storage()
                 .persistent()
                 .set(&DataKey::VoucherStats(v.voucher.clone()), &stats);
         }
+
+        // Increment borrower repayment count (feeds future reputation bonus).
+        let prev_count: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::RepaymentCount(borrower.clone()))
+            .unwrap_or(0);
+        env.storage()
+            .persistent()
+            .set(&DataKey::RepaymentCount(borrower.clone()), &(prev_count + 1));
 
         env.storage()
             .persistent()
@@ -200,6 +275,9 @@ pub fn repay(env: Env, borrower: Address, payment: i128) -> Result<(), ContractE
         env.storage()
             .persistent()
             .remove(&DataKey::Vouches(borrower.clone()));
+        env.storage()
+            .persistent()
+            .remove(&DataKey::YieldDistribution(loan.id));
 
         env.events().publish(
             (symbol_short!("loan"), symbol_short!("repaid")),

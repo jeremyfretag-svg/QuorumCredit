@@ -57,7 +57,18 @@ pub const TIMELOCK_EXPIRY: u64 = 72 * 60 * 60;
 /// immediately withdraws.
 pub const MIN_VOUCH_LOCK_PERIOD: u64 = 7 * 24 * 60 * 60;
 
-/// Extension fee charged when a borrower requests a loan extension, in basis points (100 = 1%).
+/// Minimum vouch age (in seconds) to start earning the age bonus (7 days).
+pub const VOUCH_AGE_BONUS_MIN_SECS: u64 = 7 * 24 * 60 * 60;
+/// Additional yield per full 30-day period a vouch has been active, in basis points.
+/// e.g. a 30-day-old vouch earns base + 25 bps extra; 60-day → base + 50 bps.
+pub const VOUCH_AGE_BONUS_BPS_PER_PERIOD: i128 = 25;
+/// Period length for the age bonus, in seconds (30 days).
+pub const VOUCH_AGE_BONUS_PERIOD_SECS: u64 = 30 * 24 * 60 * 60;
+/// Maximum age bonus a single vouch can accumulate, in basis points (200 bps = 2%).
+pub const VOUCH_AGE_BONUS_MAX_BPS: i128 = 200;
+/// Maximum reputation bonus added to yield for a borrower with a perfect repayment history,
+/// in basis points (100 bps = 1%).
+pub const REPUTATION_BONUS_MAX_BPS: i128 = 100;
 pub const EXTENSION_FEE_BPS: i128 = 100;
 
 /// Maximum number of extensions allowed per loan.
