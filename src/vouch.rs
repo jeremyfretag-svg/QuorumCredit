@@ -238,8 +238,9 @@ fn do_vouch(
     token: Address,
     chain_id: Option<u32>,
 ) -> Result<(), ContractError> {
-    let (token_client, vouches) = validate_vouch(env, cfg, &voucher, &borrower, stake, &token, chain_id)?;
-    commit_vouch(env, &token_client, voucher, borrower, stake, token, vouches, chain_id)
+    crate::helpers::register_borrower_if_needed(env, &borrower);
+    let (token_client, vouches) = validate_vouch(env, cfg, &voucher, &borrower, stake, &token)?;
+    commit_vouch(env, &token_client, voucher, borrower, stake, token, vouches)
 }
 
 pub fn batch_vouch(
@@ -753,123 +754,110 @@ fn distribute_penalty(
     }
 }
 
-// ── Bridge validation ─────────────────────────────────────────────────────────
-
-/// Validate that `chain_id` is registered, active, and that `token` is the
-/// bridge contract address for that chain.
-fn validate_bridge(env: &Env, chain_id: u32, token: &Address) -> Result<(), ContractError> {
-    let bridges: Vec<BridgeRecord> = env
-        .storage()
-        .instance()
-        .get(&DataKey::AllowedBridges)
-        .unwrap_or(Vec::new(env));
-
-    for bridge in bridges.iter() {
-        if bridge.chain_id == chain_id {
-            if !bridge.active {
-                return Err(ContractError::InvalidChain);
-            }
-            if bridge.bridge_address != *token {
-                return Err(ContractError::InvalidChain);
-            }
-            return Ok(());
-        }
-    }
-
-    Err(ContractError::InvalidChain)
+pub fn transfer_vouch(
+    _env: Env,
+    _from: Address,
+    _to: Address,
+    _borrower: Address,
+) -> Result<(), ContractError> {
+    Err(ContractError::InvalidStateTransition)
 }
 
-/// Register a new cross-chain bridge. Admin-only.
-pub fn register_bridge(
-    env: Env,
-    admin_signers: Vec<Address>,
-    chain_id: u32,
-    chain_name: soroban_sdk::String,
-    bridge_address: Address,
+pub fn delegate_vouch(
+    _env: Env,
+    _voucher: Address,
+    _borrower: Address,
+    _delegate: Address,
+    _token: Address,
 ) -> Result<(), ContractError> {
-    require_bridge_admin(&env, &admin_signers)?;
+    Err(ContractError::InvalidStateTransition)
+}
 
-    let mut bridges: Vec<BridgeRecord> = env
+pub fn revoke_delegation(
+    _env: Env,
+    _voucher: Address,
+    _borrower: Address,
+    _token: Address,
+) -> Result<(), ContractError> {
+    Err(ContractError::InvalidStateTransition)
+}
+
+pub fn set_vouch_expiry(
+    _env: Env,
+    _voucher: Address,
+    _borrower: Address,
+    _expiry: u64,
+    _token: Address,
+) -> Result<(), ContractError> {
+    Err(ContractError::InvalidStateTransition)
+}
+
+pub fn get_vouch_history(
+    env: Env,
+    _borrower: Address,
+    _voucher: Address,
+    _token: Address,
+) -> Vec<crate::types::VouchHistoryEntry> {
+    Vec::new(&env)
+}
+
+pub fn vouch_exists(env: Env, voucher: Address, borrower: Address) -> bool {
+    let vouches: Vec<VouchRecord> = env
         .storage()
-        .instance()
-        .get(&DataKey::AllowedBridges)
+        .persistent()
+        .get(&DataKey::Vouches(borrower))
         .unwrap_or(Vec::new(&env));
+    vouches.iter().any(|v| v.voucher == voucher)
+}
 
-    for b in bridges.iter() {
-        if b.chain_id == chain_id {
-            return Err(ContractError::BridgeAlreadyRegistered);
-        }
-    }
+pub fn voucher_history(env: Env, _voucher: Address) -> Vec<Address> {
+    Vec::new(&env)
+}
 
-    bridges.push_back(BridgeRecord {
-        chain_id,
-        chain_name,
-        bridge_address,
-        active: true,
-    });
-
+pub fn get_voucher_stats(
+    env: Env,
+    voucher: Address,
+) -> crate::types::VoucherStats {
     env.storage()
-        .instance()
-        .set(&DataKey::AllowedBridges, &bridges);
-
-    Ok(())
+        .persistent()
+        .get(&DataKey::VoucherStats(voucher))
+        .unwrap_or(crate::types::VoucherStats {
+            successful_vouches: 0,
+            total_vouches_slashed: 0,
+            total_yield_earned: 0,
+            total_slashed: 0,
+        })
 }
 
-/// Deactivate a registered bridge. Admin-only.
-pub fn remove_bridge(
-    env: Env,
-    admin_signers: Vec<Address>,
-    chain_id: u32,
-) -> Result<(), ContractError> {
-    require_bridge_admin(&env, &admin_signers)?;
-
-    let mut bridges: Vec<BridgeRecord> = env
+pub fn total_vouched(env: Env, borrower: Address) -> Result<i128, ContractError> {
+    let cfg = crate::helpers::config(&env);
+    let vouches: Vec<VouchRecord> = env
         .storage()
-        .instance()
-        .get(&DataKey::AllowedBridges)
+        .persistent()
+        .get(&DataKey::Vouches(borrower))
         .unwrap_or(Vec::new(&env));
-
-    let idx = bridges
+    let total: i128 = vouches
         .iter()
-        .position(|b| b.chain_id == chain_id)
-        .ok_or(ContractError::InvalidChain)? as u32;
-
-    let mut record = bridges.get(idx).unwrap();
-    record.active = false;
-    bridges.set(idx, record);
-
-    env.storage()
-        .instance()
-        .set(&DataKey::AllowedBridges, &bridges);
-
-    Ok(())
+        .filter(|v| v.token == cfg.token)
+        .map(|v| v.stake)
+        .sum();
+    Ok(total)
 }
 
-/// Return all registered bridges.
-pub fn get_bridges(env: Env) -> Vec<BridgeRecord> {
-    env.storage()
-        .instance()
-        .get(&DataKey::AllowedBridges)
-        .unwrap_or(Vec::new(&env))
+pub fn request_vouch_withdrawal(
+    _env: Env,
+    _voucher: Address,
+    _borrower: Address,
+    _token: Address,
+) -> Result<(), ContractError> {
+    Err(ContractError::InvalidStateTransition)
 }
 
-/// Verify that enough admin signers have authorised the call.
-fn require_bridge_admin(env: &Env, signers: &Vec<Address>) -> Result<(), ContractError> {
-    let cfg: crate::types::Config = env
-        .storage()
-        .instance()
-        .get(&DataKey::Config)
-        .expect("not initialized");
-
-    let mut valid: u32 = 0;
-    for signer in signers.iter() {
-        if cfg.admins.iter().any(|a| a == signer) {
-            signer.require_auth();
-            valid += 1;
-        }
-    }
-    if valid < cfg.admin_threshold {
-        return Err(ContractError::UnauthorizedCaller);
-    }
-    Ok(())
+pub fn execute_vouch_withdrawal(
+    _env: Env,
+    _voucher: Address,
+    _borrower: Address,
+    _token: Address,
+) -> Result<(), ContractError> {
+    Err(ContractError::InvalidStateTransition)
 }

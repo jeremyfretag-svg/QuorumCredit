@@ -48,6 +48,8 @@ pub const DEFAULT_MAX_LOAN_TO_STAKE_RATIO: u32 = 150;
 pub const DEFAULT_VOUCH_COOLDOWN_SECS: u64 = 24 * 60 * 60; // 24 hours
 /// Default maximum number of vouchers that may back a single borrower.
 pub const DEFAULT_MAX_VOUCHERS_PER_BORROWER: u32 = 50;
+/// Default governance voting period for slash-threshold proposals, in seconds (7 days).
+pub const DEFAULT_VOTING_PERIOD_SECONDS: u64 = 7 * 24 * 60 * 60;
 /// Minimum delay before a timelocked governance action may be executed, in seconds (24 hours).
 pub const TIMELOCK_DELAY: u64 = 24 * 60 * 60;
 /// Maximum window after `eta` within which a timelocked action must be executed, in seconds (72 hours).
@@ -56,6 +58,13 @@ pub const TIMELOCK_EXPIRY: u64 = 72 * 60 * 60;
 /// Protects against flash-loan-style attacks where an attacker stakes, borrows, then
 /// immediately withdraws.
 pub const MIN_VOUCH_LOCK_PERIOD: u64 = 7 * 24 * 60 * 60;
+
+/// Fraction of slashed funds routed to the insurance pool (2000 = 20%).
+pub const SLASH_TO_INSURANCE_BPS: u32 = 2_000;
+/// Default insurance fee on loan disbursement (50 = 0.5%).
+pub const DEFAULT_INSURANCE_FEE_BPS: u32 = 50;
+/// Default max insurance payout as % of slashed stake (2500 = 25%).
+pub const DEFAULT_INSURANCE_COVERAGE_BPS: u32 = 2_500;
 
 /// Extension fee charged when a borrower requests a loan extension, in basis points (100 = 1%).
 pub const EXTENSION_FEE_BPS: i128 = 100;
@@ -163,13 +172,24 @@ pub enum DataKey {
     VouchDelegation(Address, Address, Address), // (borrower, original_voucher, token) → Address (delegate)
     YieldReserve,            // i128 balance of the yield reserve
     SlashEscrow(Address),    // borrower → (i128 amount, u64 release_timestamp)
-    SlashAudit(Address),     // borrower → SlashAuditRecord
+    SlashAudit(Address),     // borrower → SlashRecord (latest slash for borrower)
+    SlashRecord(u64),        // slash_id → SlashRecord
+    SlashRecordCounter,      // u64 monotonic slash ID counter
+    BorrowerRegistered(Address), // borrower → registration timestamp
     // Issue #598-601 additions
     PrepaymentPenaltyBps,    // u32: prepayment penalty in basis points
     YieldDistribution(u64),  // loan_id → Vec<YieldDistributionEntry>
     AdminAction(u64),        // action_id → AdminActionProposal
     AdminActionCounter,      // u64: monotonically increasing admin action ID
     SlashAppeal(Address, Address), // (borrower, voucher) → SlashAppealRecord
+    /// Slash-threshold governance proposal id → proposal record.
+    SlashThresholdProposal(u64),
+    SlashThresholdProposalCounter,
+    /// Per-borrower timestamp of the last successful slash.
+    LastSlashedAt(Address),
+    /// Admin config-update proposal id → proposal record.
+    ConfigUpdateProposal(u64),
+    ConfigUpdateProposalCounter,
     /// Issue #599/#600: (voucher, borrower) → WithdrawalRequest (pending timelock withdrawal)
     PendingWithdrawal(Address, Address),
     /// Issue #601: borrower → LoanExtensionRequest
@@ -180,8 +200,14 @@ pub enum DataKey {
     VoucherStats(Address),
     /// Withdrawal queue: borrower → Vec<QueuedWithdrawal>
     WithdrawalQueue(Address),
-    /// Registered cross-chain bridges: Vec<BridgeRecord>
-    AllowedBridges,
+    // #634: Liquidity Mining
+    LastMiningClaim(Address),
+    // #635: Vouch Snapshot for Governance
+    VouchSnapshot(u32),
+    // #636: Staking Derivatives
+    StakingDerivative(Address, Address),
+    // #637: Fraud Detection
+    VoucherFraudScore(Address),
 }
 
 // ── Governance ────────────────────────────────────────────────────────────────
@@ -198,6 +224,39 @@ pub struct SlashVoteRecord {
     /// Addresses that have already cast a vote on this proposal.
     pub voters: Vec<Address>,
     /// `true` once the slash has been auto-executed after quorum was reached.
+    pub executed: bool,
+}
+
+/// Governance proposal to change the protocol slash threshold (`Config.slash_bps`).
+#[contracttype]
+#[derive(Clone)]
+pub struct SlashThresholdProposal {
+    pub id: u64,
+    pub proposer: Address,
+    pub proposed_threshold: i128,
+    pub proposed_at: u64,
+    pub approve_votes: u32,
+    pub reject_votes: u32,
+    pub voters: Vec<Address>,
+    pub finalized: bool,
+}
+
+/// Config field targeted by an admin config-update proposal.
+#[contracttype]
+#[derive(Clone)]
+pub enum ConfigUpdateKey {
+    AdminThreshold,
+}
+
+/// Multi-sig admin proposal to update a config field.
+#[contracttype]
+#[derive(Clone)]
+pub struct ConfigUpdateProposal {
+    pub id: u64,
+    pub proposer: Address,
+    pub key: ConfigUpdateKey,
+    pub new_value: u32,
+    pub approvals: Vec<Address>,
     pub executed: bool,
 }
 
@@ -233,6 +292,14 @@ pub struct Config {
     /// Prepayment penalty in basis points (e.g. 100 = 1%). Applied to remaining principal
     /// when a borrower repays early. 0 means no penalty.
     pub prepayment_penalty_bps: u32,
+    /// #634: Liquidity mining reward rate in basis points per epoch (e.g. 50 = 0.5% per 7 days).
+    pub liquidity_mining_rate_bps: u32,
+    /// Voting period for slash-threshold governance proposals, in seconds.
+    pub voting_period_seconds: u64,
+    /// Minimum seconds between slashes for the same borrower (0 = disabled).
+    pub slash_cooldown_seconds: u64,
+    /// When true, critical write paths are blocked until multi-sig emergency unpause.
+    pub emergency_pause_enabled: bool,
 }
 
 // ── Data Types ────────────────────────────────────────────────────────────────
@@ -371,11 +438,19 @@ pub enum TimelockAction {
 
 #[contracttype]
 #[derive(Clone)]
-pub struct SlashAuditRecord {
+pub struct SlashRecord {
+    pub slash_id: u64,
     pub borrower: Address,
+    pub loan_id: u64,
     pub loan_amount: i128,
     pub total_slashed: i128,
     pub slash_timestamp: u64,
+    /// Amount returned to borrower from treasury on full repay (0 until recovered).
+    pub recovery_amount: i128,
+    /// Set by admin on reversal; None when not reversed.
+    pub reversal_reason: Option<soroban_sdk::String>,
+    /// True once an admin has reversed this slash.
+    pub reversed: bool,
 }
 
 #[contracttype]
@@ -496,3 +571,47 @@ pub struct ThawState {
     pub thaw_duration: u64,
     pub thaw_start_timestamp: u64,
 }
+
+// ── #634: Liquidity Mining ────────────────────────────────────────────────────
+
+/// Epoch duration for liquidity mining rewards (7 days).
+pub const LIQUIDITY_MINING_EPOCH_SECS: u64 = 7 * 24 * 60 * 60;
+/// Default liquidity mining rate: 50 bps = 0.5% per epoch.
+pub const DEFAULT_LIQUIDITY_MINING_RATE_BPS: u32 = 50;
+
+// ── #635: Vouch Snapshot for Governance ──────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone)]
+pub struct VouchSnapshotEntry {
+    pub borrower: Address,
+    pub total_stake: i128,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct VouchSnapshotRecord {
+    pub ledger_sequence: u32,
+    pub timestamp: u64,
+    pub entries: Vec<VouchSnapshotEntry>,
+}
+
+// ── #636: Staking Derivatives ─────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone)]
+pub struct StakingDerivativeRecord {
+    pub voucher: Address,
+    pub borrower: Address,
+    pub stake_amount: i128,
+    pub minted_at: u64,
+    pub current_holder: Address,
+    pub is_active: bool,
+}
+
+// ── #637: Fraud Detection ─────────────────────────────────────────────────────
+
+pub const FRAUD_SCORE_HIGH_THRESHOLD: u32 = 70;
+pub const FRAUD_SCORE_MAX: u32 = 100;
+pub const FRAUD_SCORE_DEFAULT_WEIGHT: u32 = 20;
+pub const FRAUD_SCORE_CONCENTRATION_WEIGHT: u32 = 10;

@@ -1,24 +1,34 @@
 #![no_std]
 
+mod admin;
 mod errors;
+mod governance;
 mod helpers;
-mod oracle;
 mod types;
 mod vouch;
+mod vouch_snapshot;
 
 use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, Env, String, Vec};
 
+pub use errors::ContractError;
+pub use types::*;
+
+#[cfg(test)]
+mod slash_threshold_voting_test;
+#[cfg(test)]
+mod slash_cooldown_test;
+#[cfg(test)]
+mod config_update_voting_test;
+#[cfg(test)]
+mod emergency_pause_test;
 #[cfg(test)]
 mod withdrawal_queue_test;
 #[cfg(test)]
 mod cross_chain_vouch_test;
 
-use crate::errors::ContractError;
-use crate::helpers::{config, get_active_loan_record, has_active_loan, require_allowed_token, require_not_paused};
-use crate::types::{
-    Config, DataKey, LoanRecord, LoanStatus, QueuedWithdrawal, VouchRecord,
-    DEFAULT_LOAN_DURATION, DEFAULT_MAX_LOAN_TO_STAKE_RATIO, DEFAULT_MAX_VOUCHERS,
-    DEFAULT_MIN_LOAN_AMOUNT, DEFAULT_MIN_VOUCH_AGE_SECS, DEFAULT_SLASH_BPS, DEFAULT_YIELD_BPS,
+use crate::helpers::{
+    config, get_active_loan_record, has_active_loan, loan_status as helper_loan_status,
+    require_allowed_token, require_not_paused,
 };
 
 #[contract]
@@ -26,10 +36,6 @@ pub struct QuorumCreditContract;
 
 #[contractimpl]
 impl QuorumCreditContract {
-    // ─────────────────────────────────────────────
-    // Initialization
-    // ─────────────────────────────────────────────
-
     pub fn initialize(
         env: Env,
         deployer: Address,
@@ -43,9 +49,8 @@ impl QuorumCreditContract {
             return Err(ContractError::AlreadyInitialized);
         }
 
-        if admins.is_empty() || admin_threshold == 0 || admin_threshold > admins.len() {
-            return Err(ContractError::InvalidAmount);
-        }
+        helpers::validate_admin_config(&env, &admins, admin_threshold)?;
+        helpers::require_valid_token(&env, &token)?;
 
         env.storage().instance().set(&DataKey::Deployer, &deployer);
         env.storage().instance().set(
@@ -64,15 +69,15 @@ impl QuorumCreditContract {
                 grace_period: 0,
                 min_vouch_age_secs: DEFAULT_MIN_VOUCH_AGE_SECS,
                 prepayment_penalty_bps: 0,
+                liquidity_mining_rate_bps: DEFAULT_LIQUIDITY_MINING_RATE_BPS,
+                voting_period_seconds: DEFAULT_VOTING_PERIOD_SECONDS,
+                slash_cooldown_seconds: 0,
+                emergency_pause_enabled: false,
             },
         );
 
         Ok(())
     }
-
-    // ─────────────────────────────────────────────
-    // Core Vouching
-    // ─────────────────────────────────────────────
 
     pub fn vouch(
         env: Env,
@@ -96,10 +101,6 @@ impl QuorumCreditContract {
         vouch::batch_vouch(env, voucher, borrowers, stakes, token, chain_id)
     }
 
-    // ─────────────────────────────────────────────
-    // Stake Management
-    // ─────────────────────────────────────────────
-
     pub fn increase_stake(
         env: Env,
         voucher: Address,
@@ -109,7 +110,6 @@ impl QuorumCreditContract {
         vouch::increase_stake(env, voucher, borrower, additional)
     }
 
-    /// Decrease stake. If borrower has an active loan, queues the withdrawal.
     pub fn decrease_stake(
         env: Env,
         voucher: Address,
@@ -119,7 +119,6 @@ impl QuorumCreditContract {
         vouch::decrease_stake(env, voucher, borrower, amount)
     }
 
-    /// Fully withdraw a vouch. If borrower has an active loan, queues the withdrawal.
     pub fn withdraw_vouch(
         env: Env,
         voucher: Address,
@@ -128,13 +127,6 @@ impl QuorumCreditContract {
         vouch::withdraw_vouch(env, voucher, borrower)
     }
 
-    // ─────────────────────────────────────────────
-    // Withdrawal Queue
-    // ─────────────────────────────────────────────
-
-    /// Queue a withdrawal during an active loan.
-    /// Optionally pay a priority fee (stroops) to be processed before others.
-    /// Queue is processed automatically when the loan is repaid or slashed.
     pub fn request_withdrawal(
         env: Env,
         voucher: Address,
@@ -144,8 +136,6 @@ impl QuorumCreditContract {
         vouch::request_withdrawal(env, voucher, borrower, priority_fee)
     }
 
-    /// Partial withdrawal: withdraw up to 50% of stake during an active loan.
-    /// A 10% penalty is applied to the withdrawn amount and distributed to remaining vouchers.
     pub fn partial_withdraw(
         env: Env,
         voucher: Address,
@@ -154,44 +144,9 @@ impl QuorumCreditContract {
         vouch::partial_withdraw(env, voucher, borrower)
     }
 
-    /// Get the pending withdrawal queue for a borrower.
     pub fn get_withdrawal_queue(env: Env, borrower: Address) -> Vec<QueuedWithdrawal> {
         vouch::get_withdrawal_queue(env, borrower)
     }
-
-    // ─────────────────────────────────────────────
-    // Cross-chain Bridge Management
-    // ─────────────────────────────────────────────
-
-    /// Register a cross-chain bridge so vouchers can stake tokens from other chains.
-    /// Requires admin quorum. `chain_id` must be unique (e.g. 1 = Ethereum, 137 = Polygon).
-    pub fn register_bridge(
-        env: Env,
-        admin_signers: Vec<Address>,
-        chain_id: u32,
-        chain_name: String,
-        bridge_address: Address,
-    ) -> Result<(), ContractError> {
-        vouch::register_bridge(env, admin_signers, chain_id, chain_name, bridge_address)
-    }
-
-    /// Deactivate a registered bridge. Existing vouches are unaffected; new ones are rejected.
-    pub fn remove_bridge(
-        env: Env,
-        admin_signers: Vec<Address>,
-        chain_id: u32,
-    ) -> Result<(), ContractError> {
-        vouch::remove_bridge(env, admin_signers, chain_id)
-    }
-
-    /// Return all registered bridges (active and inactive).
-    pub fn get_bridges(env: Env) -> Vec<crate::types::BridgeRecord> {
-        vouch::get_bridges(env)
-    }
-
-    // ─────────────────────────────────────────────
-    // Loans (minimal — for test support)
-    // ─────────────────────────────────────────────
 
     pub fn request_loan(
         env: Env,
@@ -232,16 +187,7 @@ impl QuorumCreditContract {
         }
 
         let now = env.ledger().timestamp();
-        let loan_id: u64 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::LoanCounter)
-            .unwrap_or(0u64)
-            + 1;
-        env.storage()
-            .persistent()
-            .set(&DataKey::LoanCounter, &loan_id);
-
+        let loan_id = helpers::next_loan_id(&env);
         let total_yield = amount * cfg.yield_bps / 10_000;
 
         let loan = LoanRecord {
@@ -269,6 +215,9 @@ impl QuorumCreditContract {
         env.storage()
             .persistent()
             .set(&DataKey::ActiveLoan(borrower.clone()), &loan_id);
+        env.storage()
+            .persistent()
+            .set(&DataKey::LatestLoan(borrower.clone()), &loan_id);
 
         token_client.transfer(&env.current_contract_address(), &borrower, &amount);
 
@@ -334,7 +283,6 @@ impl QuorumCreditContract {
                 );
             }
 
-            // Process any queued withdrawals now that the loan is closed
             vouch::process_withdrawal_queue(&env, &borrower);
 
             env.storage()
@@ -379,5 +327,141 @@ impl QuorumCreditContract {
             .get(&DataKey::Vouches(borrower))
             .unwrap_or(Vec::new(&env));
         vouches.iter().any(|v| v.voucher == voucher)
+    }
+
+    pub fn get_config(env: Env) -> Config {
+        config(&env)
+    }
+
+    pub fn loan_status(env: Env, borrower: Address) -> LoanStatus {
+        helper_loan_status(&env, &borrower)
+    }
+
+    // ── Governance: slash voting ──────────────────────────────────────────────
+
+    pub fn vote_slash(
+        env: Env,
+        voucher: Address,
+        borrower: Address,
+        approve: bool,
+    ) -> Result<(), ContractError> {
+        governance::vote_slash(env, voucher, borrower, approve)
+    }
+
+    pub fn get_slash_vote(env: Env, borrower: Address) -> Option<SlashVoteRecord> {
+        governance::get_slash_vote(env, borrower)
+    }
+
+    pub fn set_slash_vote_quorum(env: Env, admin_signers: Vec<Address>, quorum_bps: u32) {
+        helpers::require_admin_approval(&env, &admin_signers);
+        governance::set_slash_vote_quorum(&env, quorum_bps);
+    }
+
+    pub fn get_slash_vote_quorum(env: Env) -> u32 {
+        governance::get_slash_vote_quorum(env)
+    }
+
+    pub fn execute_slash_vote(env: Env, borrower: Address) -> Result<(), ContractError> {
+        governance::execute_slash_vote(env, borrower)
+    }
+
+    // ── Issue #680: slash threshold governance ────────────────────────────────
+
+    pub fn propose_slash_threshold(
+        env: Env,
+        proposer: Address,
+        new_threshold: i128,
+    ) -> Result<u64, ContractError> {
+        governance::propose_slash_threshold(env, proposer, new_threshold)
+    }
+
+    pub fn vote_slash_threshold(
+        env: Env,
+        voter: Address,
+        proposal_id: u64,
+        approve: bool,
+    ) -> Result<(), ContractError> {
+        governance::vote_slash_threshold(env, voter, proposal_id, approve)
+    }
+
+    pub fn finalize_slash_threshold(env: Env, proposal_id: u64) -> Result<(), ContractError> {
+        governance::finalize_slash_threshold(env, proposal_id)
+    }
+
+    pub fn get_slash_threshold_proposal(
+        env: Env,
+        proposal_id: u64,
+    ) -> Option<SlashThresholdProposal> {
+        governance::get_slash_threshold_proposal(env, proposal_id)
+    }
+
+    // ── Admin ─────────────────────────────────────────────────────────────────
+
+    pub fn pause(env: Env, admin_signers: Vec<Address>) {
+        admin::pause(env, admin_signers)
+    }
+
+    pub fn unpause(env: Env, admin_signers: Vec<Address>) {
+        admin::unpause(env, admin_signers)
+    }
+
+    pub fn get_paused(env: Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+    }
+
+    pub fn set_config(env: Env, admin_signers: Vec<Address>, cfg: Config) {
+        admin::set_config(env, admin_signers, cfg)
+    }
+
+    pub fn update_config(
+        env: Env,
+        admin_signers: Vec<Address>,
+        yield_bps: Option<i128>,
+        slash_bps: Option<i128>,
+    ) {
+        admin::update_config(env, admin_signers, yield_bps, slash_bps)
+    }
+
+    // ── Issue #682: multi-sig config updates ──────────────────────────────────
+
+    pub fn propose_config_update(
+        env: Env,
+        proposer: Address,
+        key: ConfigUpdateKey,
+        new_value: u32,
+    ) -> Result<u64, ContractError> {
+        admin::propose_config_update(env, proposer, key, new_value)
+    }
+
+    pub fn approve_config_update(
+        env: Env,
+        admin: Address,
+        proposal_id: u64,
+    ) -> Result<(), ContractError> {
+        admin::approve_config_update(env, admin, proposal_id)
+    }
+
+    pub fn finalize_config_update(env: Env, proposal_id: u64) -> Result<(), ContractError> {
+        admin::finalize_config_update(env, proposal_id)
+    }
+
+    pub fn get_config_update_proposal(
+        env: Env,
+        proposal_id: u64,
+    ) -> Option<ConfigUpdateProposal> {
+        admin::get_config_update_proposal(env, proposal_id)
+    }
+
+    // ── Issue #683: emergency pause ───────────────────────────────────────────
+
+    pub fn emergency_pause(env: Env, admin: Address) -> Result<(), ContractError> {
+        admin::emergency_pause(env, admin)
+    }
+
+    pub fn emergency_unpause(env: Env, admin_signers: Vec<Address>) -> Result<(), ContractError> {
+        admin::emergency_unpause(env, admin_signers)
     }
 }

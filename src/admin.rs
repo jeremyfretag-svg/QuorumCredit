@@ -1,5 +1,8 @@
-use crate::helpers::{config, require_admin_approval, require_valid_token, validate_admin_config};
-use crate::types::{Config, DataKey, AdminActionProposal};
+use crate::helpers::{
+    config, is_admin, require_admin_approval, require_not_paused, require_valid_token,
+    validate_admin_config,
+};
+use crate::types::{Config, ConfigUpdateKey, ConfigUpdateProposal, DataKey, AdminActionProposal};
 use soroban_sdk::{panic_with_error, symbol_short, Address, BytesN, Env, Vec};
 use crate::errors::ContractError;
 
@@ -216,6 +219,7 @@ pub fn blacklist(env: Env, admin_signers: Vec<Address>, borrower: Address) {
 }
 
 pub fn set_config(env: Env, admin_signers: Vec<Address>, config: Config) {
+    require_not_paused(&env).expect("contract paused");
     require_admin_approval(&env, &admin_signers);
     validate_admin_config(&env, &config.admins, config.admin_threshold)
         .expect("invalid admin config");
@@ -240,6 +244,9 @@ pub fn set_config(env: Env, admin_signers: Vec<Address>, config: Config) {
     if config.max_loan_to_stake_ratio == 0 {
         panic_with_error!(&env, ContractError::InvalidAmount);
     }
+    if config.recovery_percentage > 10_000 {
+        panic_with_error!(&env, ContractError::InvalidBps);
+    }
     env.storage().instance().set(&DataKey::Config, &config);
     env.events().publish(
         (symbol_short!("admin"), symbol_short!("config")),
@@ -253,6 +260,7 @@ pub fn update_config(
     yield_bps: Option<i128>,
     slash_bps: Option<i128>,
 ) {
+    require_not_paused(&env).expect("contract paused");
     require_admin_approval(&env, &admin_signers);
 
     let mut cfg = config(&env);
@@ -693,6 +701,180 @@ pub fn execute_admin_action(env: Env, action_id: u64) -> Result<(), ContractErro
     env.events().publish(
         (symbol_short!("admin"), symbol_short!("execute")),
         (action_id, proposal.action_type.clone()),
+    );
+
+    Ok(())
+}
+
+// ── Issue #682: Multi-sig config update proposals ─────────────────────────────
+
+pub fn propose_config_update(
+    env: Env,
+    proposer: Address,
+    key: ConfigUpdateKey,
+    new_value: u32,
+) -> Result<u64, ContractError> {
+    proposer.require_auth();
+    require_not_paused(&env)?;
+
+    if !is_admin(&env, &proposer) {
+        return Err(ContractError::UnauthorizedCaller);
+    }
+
+    if matches!(key, ConfigUpdateKey::AdminThreshold) {
+        let cfg = config(&env);
+        if new_value == 0 || new_value > cfg.admins.len() {
+            return Err(ContractError::InvalidAdminThreshold);
+        }
+    }
+
+    let proposal_id: u64 = env
+        .storage()
+        .instance()
+        .get::<DataKey, u64>(&DataKey::ConfigUpdateProposalCounter)
+        .unwrap_or(0u64)
+        .checked_add(1)
+        .expect("proposal id overflow");
+
+    let proposal = ConfigUpdateProposal {
+        id: proposal_id,
+        proposer: proposer.clone(),
+        key,
+        new_value,
+        approvals: Vec::new(&env),
+        executed: false,
+    };
+
+    env.storage()
+        .instance()
+        .set(&DataKey::ConfigUpdateProposal(proposal_id), &proposal);
+    env.storage()
+        .instance()
+        .set(&DataKey::ConfigUpdateProposalCounter, &proposal_id);
+
+    env.events().publish(
+        (symbol_short!("admin"), symbol_short!("cfg_prop")),
+        (proposal_id, proposer),
+    );
+
+    Ok(proposal_id)
+}
+
+pub fn approve_config_update(
+    env: Env,
+    admin: Address,
+    proposal_id: u64,
+) -> Result<(), ContractError> {
+    admin.require_auth();
+    require_not_paused(&env)?;
+
+    if !is_admin(&env, &admin) {
+        return Err(ContractError::UnauthorizedCaller);
+    }
+
+    let mut proposal: ConfigUpdateProposal = env
+        .storage()
+        .instance()
+        .get(&DataKey::ConfigUpdateProposal(proposal_id))
+        .ok_or(ContractError::ProposalNotFound)?;
+
+    if proposal.executed {
+        return Err(ContractError::ProposalAlreadyFinalized);
+    }
+
+    if proposal.approvals.iter().any(|a| a == admin) {
+        return Err(ContractError::AlreadyVoted);
+    }
+
+    proposal.approvals.push_back(admin.clone());
+    env.storage()
+        .instance()
+        .set(&DataKey::ConfigUpdateProposal(proposal_id), &proposal);
+
+    env.events().publish(
+        (symbol_short!("admin"), symbol_short!("cfg_appr")),
+        (proposal_id, admin),
+    );
+
+    Ok(())
+}
+
+pub fn finalize_config_update(env: Env, proposal_id: u64) -> Result<(), ContractError> {
+    require_not_paused(&env)?;
+
+    let mut proposal: ConfigUpdateProposal = env
+        .storage()
+        .instance()
+        .get(&DataKey::ConfigUpdateProposal(proposal_id))
+        .ok_or(ContractError::ProposalNotFound)?;
+
+    if proposal.executed {
+        return Err(ContractError::ProposalAlreadyFinalized);
+    }
+
+    let cfg = config(&env);
+    if proposal.approvals.len() < cfg.admin_threshold {
+        return Err(ContractError::UnauthorizedCaller);
+    }
+
+    let mut cfg = cfg;
+    match proposal.key {
+        ConfigUpdateKey::AdminThreshold => {
+            cfg.admin_threshold = proposal.new_value;
+        }
+    }
+
+    env.storage().instance().set(&DataKey::Config, &cfg);
+    proposal.executed = true;
+    env.storage()
+        .instance()
+        .set(&DataKey::ConfigUpdateProposal(proposal_id), &proposal);
+
+    env.events().publish(
+        (symbol_short!("admin"), symbol_short!("cfg_fin")),
+        proposal_id,
+    );
+
+    Ok(())
+}
+
+pub fn get_config_update_proposal(env: Env, proposal_id: u64) -> Option<ConfigUpdateProposal> {
+    env.storage()
+        .instance()
+        .get(&DataKey::ConfigUpdateProposal(proposal_id))
+}
+
+// ── Issue #683: Emergency pause ───────────────────────────────────────────────
+
+pub fn emergency_pause(env: Env, admin: Address) -> Result<(), ContractError> {
+    admin.require_auth();
+
+    if !is_admin(&env, &admin) {
+        return Err(ContractError::UnauthorizedCaller);
+    }
+
+    let mut cfg = config(&env);
+    cfg.emergency_pause_enabled = true;
+    env.storage().instance().set(&DataKey::Config, &cfg);
+
+    env.events().publish(
+        (symbol_short!("admin"), symbol_short!("em_pause")),
+        admin,
+    );
+
+    Ok(())
+}
+
+pub fn emergency_unpause(env: Env, admin_signers: Vec<Address>) -> Result<(), ContractError> {
+    require_admin_approval(&env, &admin_signers);
+
+    let mut cfg = config(&env);
+    cfg.emergency_pause_enabled = false;
+    env.storage().instance().set(&DataKey::Config, &cfg);
+
+    env.events().publish(
+        (symbol_short!("admin"), symbol_short!("em_unpa")),
+        admin_signers.get(0).unwrap(),
     );
 
     Ok(())

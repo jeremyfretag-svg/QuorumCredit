@@ -57,8 +57,14 @@ pub enum ContractError {
     WithdrawalNotQueued = 47,
     /// Partial withdrawal amount exceeds the 50% cap.
     PartialWithdrawalExceedsCap = 48,
-    /// The chain_id supplied for a cross-chain vouch is not registered or inactive.
-    InvalidChain = 49,
-    /// A bridge with this chain_id is already registered.
-    BridgeAlreadyRegistered = 50,
+    /// Borrower was slashed too recently; slash cooldown is still active.
+    SlashCooldownActive = 49,
+    /// Caller is not an admin or protocol-token holder allowed to govern.
+    NotGovernanceParticipant = 50,
+    /// Governance action is not allowed after the voting period has ended.
+    VotingPeriodEnded = 51,
+    /// Governance proposal was not found.
+    ProposalNotFound = 52,
+    /// Governance proposal was already finalized.
+    ProposalAlreadyFinalized = 53,
 }
