@@ -50,7 +50,7 @@ mod vote_slash_auto_execute_tests {
 
     fn do_vouch(s: &Setup, voucher: &Address, borrower: &Address, stake: i128) {
         StellarAssetClient::new(&s.env, &s.token_id).mint(voucher, &stake);
-        s.client.vouch(voucher, borrower, &stake, &s.token_id);
+        s.client.vouch(voucher, borrower, &stake, &s.token_id, &None);
     }
 
     fn do_loan(s: &Setup, borrower: &Address, amount: i128, threshold: i128) {

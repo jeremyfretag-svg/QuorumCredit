@@ -545,6 +545,11 @@ pub fn execute_governance_change(env: Env, proposal_id: u64) -> Result<(), Contr
         return Err(ContractError::TimelockNotReady);
     }
 
+    // Check proposal hasn't been vetoed (#685)
+    if proposal.vetoed {
+        return Err(ContractError::ProposalVetoed);
+    }
+
     // Check proposal hasn't been executed
     if proposal.executed {
         return Err(ContractError::SlashAlreadyExecuted);
@@ -837,4 +842,33 @@ pub fn get_dispute_window(env: Env) -> u64 {
         .instance()
         .get(&DataKey::DisputeWindowSecs)
         .unwrap_or(DEFAULT_DISPUTE_WINDOW_SECS)
+}
+
+/// Veto a governance proposal (#685)
+pub fn veto_proposal(env: Env, proposal_id: u64) -> Result<(), ContractError> {
+    let cfg = config(&env);
+    let veto_admin = cfg.veto_admin.ok_or(ContractError::UnauthorizedCaller)?;
+    veto_admin.require_auth();
+
+    let mut proposal: GovernanceProposal = env
+        .storage()
+        .instance()
+        .get(&DataKey::GovernanceProposal(proposal_id))
+        .ok_or(ContractError::TimelockNotFound)?;
+
+    if proposal.executed || proposal.vetoed {
+        return Err(ContractError::InvalidStateTransition);
+    }
+
+    proposal.vetoed = true;
+    env.storage()
+        .instance()
+        .set(&DataKey::GovernanceProposal(proposal_id), &proposal);
+
+    env.events().publish(
+        (symbol_short!("gov"), symbol_short!("vetoed")),
+        (proposal_id, veto_admin),
+    );
+
+    Ok(())
 }

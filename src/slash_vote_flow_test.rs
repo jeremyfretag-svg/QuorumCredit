@@ -51,7 +51,7 @@ mod slash_vote_flow_tests {
         // Step 1: Create loan with 3 vouchers, each staking 1_000_000
         for voucher in [&voucher_a, &voucher_b, &voucher_c] {
             StellarAssetClient::new(&env, &token_id).mint(voucher, &1_000_000);
-            client.vouch(voucher, &borrower, &1_000_000, &token_id);
+            client.vouch(voucher, &borrower, &1_000_000, &token_id, &None);
         }
         client.request_loan(
             &borrower,

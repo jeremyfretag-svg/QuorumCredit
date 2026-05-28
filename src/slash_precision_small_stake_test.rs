@@ -58,7 +58,7 @@ mod slash_precision_tests {
     fn do_vouch(s: &Setup, voucher: &Address, borrower: &Address, stake: i128) {
         let token_client = StellarAssetClient::new(&s.env, &s.token_id);
         token_client.mint(voucher, &stake);
-        s.client.vouch(voucher, borrower, &stake, &s.token_id);
+        s.client.vouch(voucher, borrower, &stake, &s.token_id, &None);
     }
 
     fn do_loan(s: &Setup, borrower: &Address, amount: i128, threshold: i128) {

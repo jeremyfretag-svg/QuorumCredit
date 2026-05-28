@@ -52,7 +52,7 @@ mod voucher_balance_check_tests {
         StellarAssetClient::new(&s.env, &s.token_id).mint(&voucher, &500);
 
         // Attempt to vouch with 1000 tokens (more than balance)
-        let result = s.client.try_vouch(&voucher, &borrower, &1_000, &s.token_id);
+        let result = s.client.try_vouch(&voucher, &borrower, &1_000, &s.token_id, &None);
         
         // Should return InsufficientVoucherBalance error
         assert_eq!(result, Err(Ok(ContractError::InsufficientVoucherBalance)));
@@ -69,7 +69,7 @@ mod voucher_balance_check_tests {
         StellarAssetClient::new(&s.env, &s.token_id).mint(&voucher, &1_000);
 
         // Vouch with 1000 tokens should succeed
-        let result = s.client.try_vouch(&voucher, &borrower, &1_000, &s.token_id);
+        let result = s.client.try_vouch(&voucher, &borrower, &1_000, &s.token_id, &None);
         assert!(result.is_ok(), "vouch should succeed with sufficient balance");
 
         // Verify vouch was recorded
@@ -86,7 +86,7 @@ mod voucher_balance_check_tests {
         // Don't mint any tokens to voucher (balance = 0)
 
         // Attempt to vouch with any amount
-        let result = s.client.try_vouch(&voucher, &borrower, &100, &s.token_id);
+        let result = s.client.try_vouch(&voucher, &borrower, &100, &s.token_id, &None);
         
         // Should return InsufficientVoucherBalance error
         assert_eq!(result, Err(Ok(ContractError::InsufficientVoucherBalance)));

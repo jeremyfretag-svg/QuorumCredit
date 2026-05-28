@@ -37,7 +37,7 @@ mod decrease_stake_full_withdrawal_tests {
 
         // Step 1: Voucher A vouches with 1,000,000 stroops.
         StellarAssetClient::new(&env, &token_id).mint(&voucher_a, &1_000_000);
-        client.vouch(&voucher_a, &borrower, &1_000_000, &token_id);
+        client.vouch(&voucher_a, &borrower, &1_000_000, &token_id, &None);
 
         let balance_before = soroban_sdk::token::Client::new(&env, &token_id).balance(&voucher_a);
 

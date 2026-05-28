@@ -36,7 +36,7 @@ mod loan_deadline_enforcement_tests {
         client.set_config(&Vec::from_array(env, [_admin.clone()]), &config);
 
         // Have voucher vouch
-        client.vouch(&voucher, &borrower, &5_000_000, &token_id);
+        client.vouch(&voucher, &borrower, &5_000_000, &token_id, &None);
 
         // Request loan
         client.request_loan(

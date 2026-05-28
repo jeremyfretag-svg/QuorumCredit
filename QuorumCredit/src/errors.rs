@@ -42,6 +42,10 @@ pub enum ContractError {
     SlashAlreadyExecuted = 33,
     QuorumNotMet = 34,
     AlreadyRepaid = 35,
+    // #684: Admin Delegation
+    PermissionNotDelegated = 36,
+    // #685: Admin Veto Power
+    ProposalVetoed = 37,
     /// Voucher and borrower must be different addresses.
     SelfVouchNotAllowed = 38,
     InvalidBps = 39,
@@ -60,4 +64,21 @@ pub enum ContractError {
     VouchDepthExceeded = 49,
     // Task 4: Loan Category
     InvalidLoanCategory = 50,
+    // #642: Collateral Diversification
+    SectorConcentrationTooHigh = 51,
+    // #643: Loan Purpose Validation
+    LoanPurposeNotAllowed = 52,
+    // #645: Loan Restructuring
+    RestructureRequestNotFound = 53,
+    RestructureAlreadyPending = 54,
+    // Dispute mechanism
+    DisputeNotFound = 55,
+    DisputeAlreadyResolved = 56,
+    DisputeWindowExpired = 57,
+    // Granular pause
+    FunctionPaused = 58,
+    // Admin config
+    InvalidAdminThreshold = 59,
+    // Voucher stake limit
+    StakeLimitExceeded = 60,
 }

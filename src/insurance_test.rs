@@ -45,7 +45,7 @@ mod insurance_tests {
 
     fn do_vouch(s: &Setup, voucher: &Address, borrower: &Address, stake: i128) {
         StellarAssetClient::new(&s.env, &s.token_id).mint(voucher, &stake);
-        s.client.vouch(voucher, borrower, &stake, &s.token_id);
+        s.client.vouch(voucher, borrower, &stake, &s.token_id, &None);
     }
 
     /// Trigger a slash so the loan is Defaulted and voucher history is recorded.

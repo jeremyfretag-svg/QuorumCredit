@@ -42,7 +42,7 @@ mod is_eligible_token_filter_tests {
 
     fn do_vouch(s: &Setup, voucher: &Address, borrower: &Address, stake: i128, token: &Address) {
         StellarAssetClient::new(&s.env, token).mint(voucher, &stake);
-        s.client.vouch(voucher, borrower, &stake, token);
+        s.client.vouch(voucher, borrower, &stake, token, &None);
     }
 
     /// Issue #368: is_eligible filters vouches by token — USDC vouches don't count for XLM loans.

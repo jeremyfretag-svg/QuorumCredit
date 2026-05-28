@@ -53,7 +53,7 @@ mod mint_reputation_nft_tests {
     fn do_full_repay(s: &Setup, borrower: &Address, voucher: &Address) {
         let token = StellarAssetClient::new(&s.env, &s.token_id);
         token.mint(voucher, &500_000);
-        s.client.vouch(voucher, borrower, &500_000, &s.token_id);
+        s.client.vouch(voucher, borrower, &500_000, &s.token_id, &None);
         s.client.request_loan(borrower, &100_000, &500_000, &String::from_str(&s.env, "test"), &s.token_id);
         // principal 100_000 + 2% yield 2_000 = 102_000
         token.mint(borrower, &102_000);
@@ -110,7 +110,7 @@ mod mint_reputation_nft_tests {
         let voucher = Address::generate(&env);
         let token = StellarAssetClient::new(&env, &token_id.address());
         token.mint(&voucher, &500_000);
-        client.vouch(&voucher, &borrower, &500_000, &token_id.address());
+        client.vouch(&voucher, &borrower, &500_000, &token_id.address(), &None);
         client.request_loan(&borrower, &100_000, &500_000, &String::from_str(&env, "t"), &token_id.address());
         token.mint(&borrower, &102_000);
         client.repay(&borrower, &102_000);

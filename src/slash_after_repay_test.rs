@@ -52,7 +52,7 @@ mod slash_after_repay_tests {
     /// Helper: mint tokens to voucher and vouch for borrower.
     fn do_vouch(s: &Setup, voucher: &Address, borrower: &Address, stake: i128) {
         StellarAssetClient::new(&s.env, &s.token_id).mint(voucher, &stake);
-        s.client.vouch(voucher, borrower, &stake, &s.token_id);
+        s.client.vouch(voucher, borrower, &stake, &s.token_id, &None);
     }
 
     /// Helper: request a loan for borrower (loan amount = 100_000, threshold = stake).

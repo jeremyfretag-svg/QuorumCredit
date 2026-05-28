@@ -44,8 +44,8 @@ mod withdraw_slash_treasury_tests {
 
         StellarAssetClient::new(&s.env, &s.token_id).mint(&voucher_a, &600_000);
         StellarAssetClient::new(&s.env, &s.token_id).mint(&voucher_b, &400_000);
-        s.client.vouch(&voucher_a, &borrower, &600_000, &s.token_id);
-        s.client.vouch(&voucher_b, &borrower, &400_000, &s.token_id);
+        s.client.vouch(&voucher_a, &borrower, &600_000, &s.token_id, &None);
+        s.client.vouch(&voucher_b, &borrower, &400_000, &s.token_id, &None);
         s.client.request_loan(
             &borrower,
             &200_000,

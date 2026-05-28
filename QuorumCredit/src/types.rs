@@ -199,6 +199,12 @@ pub struct AdminAuditEntry {
     pub timestamp: u64,
 }
 
+#[contracttype]
+#[derive(Clone)]
+pub struct AdminDelegationRecord {
+    pub permissions: Vec<soroban_sdk::String>,
+}
+
 // ── Governance ────────────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -221,6 +227,8 @@ pub struct GovernanceProposal {
     pub voters: Vec<Address>,
     pub voting_end: u64,
     pub executed: bool,
+    /// #685: Proposal veto status.
+    pub vetoed: bool,
 }
 
 #[contracttype]
@@ -262,10 +270,8 @@ pub struct Config {
     /// #634: Liquidity mining reward rate in basis points (e.g. 100 = 1% per epoch).
     /// Vouchers earn this rate on their staked amount per mining epoch.
     pub liquidity_mining_rate_bps: u32,
-    /// #663: Minimum repayment fraction (in basis points) below which a loan is considered a
-    /// partial default. E.g. 5000 = 50% — if borrower repays less than 50% of total owed,
-    /// the loan is marked PartialDefault instead of Defaulted. 0 = feature disabled.
-    pub partial_default_threshold_bps: u32,
+    /// #685: Veto admin address; can veto governance proposals before execution.
+    pub veto_admin: Option<Address>,
 }
 
 // ── Per-Token Config ──────────────────────────────────────────────────────────
@@ -361,6 +367,7 @@ pub struct VouchRecord {
     pub amount: i128,         // in stroops
     pub vouch_timestamp: u64, // ledger timestamp when vouch was created; immutable after set
     pub token: Address,       // token this stake is denominated in
+    pub sector: soroban_sdk::String, // #642: sector/region of the voucher for diversification
 }
 
 #[contracttype]

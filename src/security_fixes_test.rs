@@ -54,7 +54,7 @@ mod security_fixes_tests {
     fn do_vouch(s: &Setup, voucher: &Address, borrower: &Address, stake: i128) {
         let token = StellarAssetClient::new(&s.env, &s.token_id);
         token.mint(voucher, &stake);
-        s.client.vouch(&voucher, &borrower, &stake, &s.token_id);
+        s.client.vouch(&voucher, &borrower, &stake, &s.token_id, &None);
     }
 
     // ── Issue 108: Prevent Borrower from Repaying Another Borrower's Loan ──
@@ -313,7 +313,7 @@ mod security_fixes_tests {
         token.mint(&user, &stake);
 
         // Attempt to vouch for self should return SelfVouchNotAllowed
-        let result = s.client.try_vouch(&user, &user, &stake, &s.token_id);
+        let result = s.client.try_vouch(&user, &user, &stake, &s.token_id, &None);
         assert_eq!(result, Err(Ok(ContractError::SelfVouchNotAllowed)));
     }
 

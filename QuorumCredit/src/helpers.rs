@@ -247,6 +247,16 @@ pub fn require_valid_token(env: &Env, addr: &Address) -> Result<(), ContractErro
     Ok(())
 }
 
+/// Check if a caller has been delegated a specific permission (#684)
+pub fn has_delegated_permission(env: &Env, caller: &Address, permission: &soroban_sdk::String) -> bool {
+    if let Some(record) = env.storage().persistent()
+        .get::<_, crate::types::AdminDelegationRecord>(&crate::types::DataKey::AdminDelegation(caller.clone())) {
+        record.permissions.iter().any(|p| p == *permission)
+    } else {
+        false
+    }
+}
+
 /// Compute `amount * bps / 10_000` — basis-point math helper.
 pub fn bps_of(amount: i128, bps: i128) -> i128 {
     amount * bps / 10_000

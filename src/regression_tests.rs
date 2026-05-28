@@ -68,7 +68,7 @@ mod regression_tests {
         mint(&s, &voucher, 10_000);
         mint(&s, &attacker, 10_000);
 
-        s.client.vouch(&voucher, &borrower, &10_000, &s.token);
+        s.client.vouch(&voucher, &borrower, &10_000, &s.token, &None);
         s.client
             .request_loan(&borrower, &5_000, &5_000, &purpose(&s.env), &s.token);
 
@@ -98,7 +98,7 @@ mod regression_tests {
         mint(&s, &voucher, 10_000);
         mint(&s, &borrower, 5_000);
 
-        s.client.vouch(&voucher, &borrower, &10_000, &s.token);
+        s.client.vouch(&voucher, &borrower, &10_000, &s.token, &None);
         s.client
             .request_loan(&borrower, &5_000, &5_000, &purpose(&s.env), &s.token);
 
@@ -127,7 +127,7 @@ mod regression_tests {
 
         mint(&s, &voucher, 10_000);
 
-        s.client.vouch(&voucher, &borrower, &10_000, &s.token);
+        s.client.vouch(&voucher, &borrower, &10_000, &s.token, &None);
         s.client
             .request_loan(&borrower, &5_000, &5_000, &purpose(&s.env), &s.token);
 
@@ -156,7 +156,7 @@ mod regression_tests {
 
         // Voucher stakes 500 — contract has 1_000_000 pre-funded + 500 stake
         mint(&s, &voucher, 500);
-        s.client.vouch(&voucher, &borrower, &500, &s.token);
+        s.client.vouch(&voucher, &borrower, &500, &s.token, &None);
 
         // Requesting a loan larger than the contract balance must fail
         let huge = 10_000_000_000i128;
@@ -181,9 +181,9 @@ mod regression_tests {
         let voucher = Address::generate(&s.env);
 
         mint(&s, &voucher, 20_000);
-        s.client.vouch(&voucher, &borrower, &5_000, &s.token);
+        s.client.vouch(&voucher, &borrower, &5_000, &s.token, &None);
 
-        let result = s.client.try_vouch(&voucher, &borrower, &5_000, &s.token);
+        let result = s.client.try_vouch(&voucher, &borrower, &5_000, &s.token, &None);
         assert!(
             result.is_err(),
             "regression: duplicate vouch should be rejected"
@@ -201,7 +201,7 @@ mod regression_tests {
         let borrower = Address::generate(&s.env);
         let voucher = Address::generate(&s.env);
 
-        let result = s.client.try_vouch(&voucher, &borrower, &0, &s.token);
+        let result = s.client.try_vouch(&voucher, &borrower, &0, &s.token, &None);
         assert!(
             result.is_err(),
             "regression: zero-stake vouch should be rejected"
@@ -219,7 +219,7 @@ mod regression_tests {
         let borrower = Address::generate(&s.env);
         mint(&s, &borrower, 10_000);
 
-        let result = s.client.try_vouch(&borrower, &borrower, &5_000, &s.token);
+        let result = s.client.try_vouch(&borrower, &borrower, &5_000, &s.token, &None);
         assert!(
             result.is_err(),
             "regression: self-vouch should be rejected"
@@ -238,7 +238,7 @@ mod regression_tests {
         let voucher = Address::generate(&s.env);
 
         mint(&s, &voucher, 10_000);
-        s.client.vouch(&voucher, &borrower, &10_000, &s.token);
+        s.client.vouch(&voucher, &borrower, &10_000, &s.token, &None);
 
         // DEFAULT_MIN_LOAN_AMOUNT = 100_000 stroops; request 1 stroop
         let result =
@@ -265,11 +265,11 @@ mod regression_tests {
         mint(&s, &voucher1, 10_000);
         mint(&s, &voucher2, 10_000);
 
-        s.client.vouch(&voucher1, &borrower, &10_000, &s.token);
+        s.client.vouch(&voucher1, &borrower, &10_000, &s.token, &None);
         s.client
             .request_loan(&borrower, &5_000, &5_000, &purpose(&s.env), &s.token);
 
-        let result = s.client.try_vouch(&voucher2, &borrower, &5_000, &s.token);
+        let result = s.client.try_vouch(&voucher2, &borrower, &5_000, &s.token, &None);
         assert!(
             result.is_err(),
             "regression: vouch during active loan should be rejected"

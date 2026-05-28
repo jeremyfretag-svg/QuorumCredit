@@ -58,12 +58,12 @@ mod tests {
         token_admin.mint(&voucher4, &1_000_000);
 
         // First 3 vouches should succeed
-        client.vouch(&voucher1, &borrower, &100_000, &token);
-        client.vouch(&voucher2, &borrower, &100_000, &token);
-        client.vouch(&voucher3, &borrower, &100_000, &token);
+        client.vouch(&voucher1, &borrower, &100_000, &token, &None);
+        client.vouch(&voucher2, &borrower, &100_000, &token, &None);
+        client.vouch(&voucher3, &borrower, &100_000, &token, &None);
 
         // 4th vouch should fail with MaxVouchersPerBorrowerExceeded error
-        let result = client.try_vouch(&voucher4, &borrower, &100_000, &token);
+        let result = client.try_vouch(&voucher4, &borrower, &100_000, &token, &None);
         assert!(result.is_err());
         assert_eq!(
             result.err(),
@@ -180,18 +180,18 @@ mod tests {
         token_admin.mint(&voucher3, &1_000_000);
 
         // Add 2 vouches (at limit)
-        client.vouch(&voucher1, &borrower, &100_000, &token);
-        client.vouch(&voucher2, &borrower, &100_000, &token);
+        client.vouch(&voucher1, &borrower, &100_000, &token, &None);
+        client.vouch(&voucher2, &borrower, &100_000, &token, &None);
 
         // 3rd vouch should fail
-        let result = client.try_vouch(&voucher3, &borrower, &100_000, &token);
+        let result = client.try_vouch(&voucher3, &borrower, &100_000, &token, &None);
         assert!(result.is_err());
 
         // Withdraw one vouch
         client.withdraw_vouch(&voucher1, &borrower);
 
         // Now voucher3 should be able to vouch
-        client.vouch(&voucher3, &borrower, &100_000, &token);
+        client.vouch(&voucher3, &borrower, &100_000, &token, &None);
 
         let vouches = client.get_vouches(&borrower).unwrap();
         assert_eq!(vouches.len(), 2);

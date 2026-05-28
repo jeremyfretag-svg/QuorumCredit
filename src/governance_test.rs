@@ -47,7 +47,7 @@ mod governance_tests {
     /// Vouch for `borrower` from `voucher` with `stake`, minting tokens first.
     fn do_vouch(s: &Setup, voucher: &Address, borrower: &Address, stake: i128) {
         StellarAssetClient::new(&s.env, &s.token_id).mint(voucher, &stake);
-        s.client.vouch(voucher, borrower, &stake, &s.token_id);
+        s.client.vouch(voucher, borrower, &stake, &s.token_id, &None);
     }
 
     /// Request a loan for `borrower` (vouches must already meet threshold).

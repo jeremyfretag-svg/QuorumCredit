@@ -39,8 +39,8 @@ mod full_lifecycle_tests {
         token_client.mint(&borrower, &1_000);
 
         // Step 3: Vouch for borrower
-        client.vouch(&voucher1, &borrower, &5_000, &token);
-        client.vouch(&voucher2, &borrower, &5_000, &token);
+        client.vouch(&voucher1, &borrower, &5_000, &token, &None);
+        client.vouch(&voucher2, &borrower, &5_000, &token, &None);
 
         // Verify vouches exist
         assert!(client.vouch_exists(&voucher1, &borrower), "Voucher1 vouch should exist");
@@ -133,9 +133,9 @@ mod full_lifecycle_tests {
         token_client.mint(&borrower, &1_000);
 
         // Vouch with different amounts
-        client.vouch(&voucher1, &borrower, &3_000, &token);
-        client.vouch(&voucher2, &borrower, &4_000, &token);
-        client.vouch(&voucher3, &borrower, &3_000, &token);
+        client.vouch(&voucher1, &borrower, &3_000, &token, &None);
+        client.vouch(&voucher2, &borrower, &4_000, &token, &None);
+        client.vouch(&voucher3, &borrower, &3_000, &token, &None);
 
         // Verify total vouched
         let total_vouched = client.total_vouched(&borrower);
@@ -214,7 +214,7 @@ mod full_lifecycle_tests {
         assert_eq!(stored_referrer, Some(referrer.clone()), "Referrer should be set");
 
         // Vouch for borrower
-        client.vouch(&voucher, &borrower, &10_000, &token);
+        client.vouch(&voucher, &borrower, &10_000, &token, &None);
 
         // Request loan
         let loan_amount = 5_000;

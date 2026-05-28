@@ -36,7 +36,7 @@ mod protocol_fee_collection_tests {
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
         // Have voucher vouch
-        client.vouch(&voucher, &borrower, &5_000_000, &token_id);
+        client.vouch(&voucher, &borrower, &5_000_000, &token_id, &None);
 
         // Request loan for 1,000,000 stroops
         client.request_loan(

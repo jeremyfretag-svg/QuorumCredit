@@ -3,7 +3,7 @@ use crate::helpers::{
     extend_ttl, has_active_loan, require_allowed_token, require_not_paused, 
     require_not_paused_for, require_positive_amount,
 };
-use crate::types::{DataKey, VouchRecord, MAX_VOUCH_DEPTH};
+use crate::types::{DataKey, PauseFlag, VouchRecord, MAX_VOUCH_DEPTH};
 use soroban_sdk::{panic_with_error, symbol_short, Address, Env, Vec};
 
 // Task 3: Circular Vouch Detection - Detect circular vouching patterns
@@ -75,10 +75,8 @@ pub fn vouch(
 ) -> Result<(), ContractError> {
     voucher.require_auth();
     require_not_paused(&env)?;
-    // Task 1: Check granular pause for vouch operations
     require_not_paused_for(&env, PauseFlag::Vouch)?;
 
-    // Voucher whitelist check: if enabled, voucher must be whitelisted.
     let whitelist_enabled: bool = env
         .storage()
         .instance()
@@ -95,7 +93,40 @@ pub fn vouch(
         }
     }
 
-    do_vouch(&env, voucher, borrower, stake, token)
+    let sector = soroban_sdk::String::from_str(&env, "");
+    do_vouch(&env, voucher, borrower, stake, token, sector)
+}
+
+// #642: vouch with explicit sector for diversification enforcement
+pub fn vouch_with_sector(
+    env: Env,
+    voucher: Address,
+    borrower: Address,
+    stake: i128,
+    token: Address,
+    sector: soroban_sdk::String,
+) -> Result<(), ContractError> {
+    voucher.require_auth();
+    require_not_paused(&env)?;
+    require_not_paused_for(&env, PauseFlag::Vouch)?;
+
+    let whitelist_enabled: bool = env
+        .storage()
+        .instance()
+        .get(&DataKey::VoucherWhitelistEnabled)
+        .unwrap_or(false);
+    if whitelist_enabled {
+        let whitelisted: bool = env
+            .storage()
+            .persistent()
+            .get(&DataKey::VoucherWhitelist(voucher.clone()))
+            .unwrap_or(false);
+        if !whitelisted {
+            return Err(ContractError::VoucherNotWhitelisted);
+        }
+    }
+
+    do_vouch(&env, voucher, borrower, stake, token, sector)
 }
 
 fn do_vouch(
@@ -104,6 +135,7 @@ fn do_vouch(
     borrower: Address,
     stake: i128,
     token: Address,
+    sector: soroban_sdk::String,
 ) -> Result<(), ContractError> {
     // Validate numeric input: stake must be strictly positive.
     require_positive_amount(env, stake)?;
@@ -191,6 +223,7 @@ fn do_vouch(
         amount: stake,
         vouch_timestamp: env.ledger().timestamp(),
         token: token.clone(),
+        sector: sector.clone(),
     });
     env.storage()
         .persistent()
@@ -224,19 +257,16 @@ pub fn batch_vouch(
 ) -> Result<(), ContractError> {
     voucher.require_auth();
     require_not_paused(&env)?;
-    // Task 1: Check granular pause for vouch operations
     require_not_paused_for(&env, PauseFlag::Vouch)?;
 
-    assert!(
-        borrowers.len() == stakes.len(),
-        "borrowers and stakes length mismatch"
-    );
+    assert!(borrowers.len() == stakes.len(), "borrowers and stakes length mismatch");
     assert!(!borrowers.is_empty(), "batch cannot be empty");
 
     for i in 0..borrowers.len() {
         let borrower = borrowers.get(i).unwrap();
         let stake = stakes.get(i).unwrap();
-        do_vouch(&env, voucher.clone(), borrower, stake, token.clone())?;
+        let sector = soroban_sdk::String::from_str(&env, "");
+        do_vouch(&env, voucher.clone(), borrower, stake, token.clone(), sector)?;
     }
 
     Ok(())
@@ -560,6 +590,7 @@ mod tests {
             amount: i128::MAX - 1000,
             vouch_timestamp: 0,
             token: token.clone(),
+            sector: soroban_sdk::String::from_str(&env, "general"),
         });
 
         vouches.push_back(VouchRecord {
@@ -567,6 +598,7 @@ mod tests {
             amount: 2000, // This would cause overflow when added to the first stake
             vouch_timestamp: 0,
             token: token.clone(),
+            sector: soroban_sdk::String::from_str(&env, "general"),
         });
 
         // Store the vouches directly in contract storage
@@ -609,6 +641,7 @@ mod tests {
             amount: 1_000_000,
             vouch_timestamp: 0,
             token: token.clone(),
+            sector: soroban_sdk::String::from_str(&env, "general"),
         });
 
         vouches.push_back(VouchRecord {
@@ -616,6 +649,7 @@ mod tests {
             amount: 2_500_000,
             vouch_timestamp: 0,
             token: token.clone(),
+            sector: soroban_sdk::String::from_str(&env, "general"),
         });
 
         // Store the vouches directly in contract storage

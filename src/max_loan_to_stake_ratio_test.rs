@@ -32,7 +32,7 @@ mod max_loan_to_stake_ratio_tests {
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
         // Have voucher vouch with 1,000,000 stroops
-        client.vouch(&voucher, &borrower, &1_000_000, &token_id);
+        client.vouch(&voucher, &borrower, &1_000_000, &token_id, &None);
 
         // Attempt to request 1,100,000 stroops (exceeds 1:1 ratio)
         let result = client.try_request_loan(
@@ -55,7 +55,7 @@ mod max_loan_to_stake_ratio_tests {
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
         // Have voucher vouch with 1,000,000 stroops
-        client.vouch(&voucher, &borrower, &1_000_000, &token_id);
+        client.vouch(&voucher, &borrower, &1_000_000, &token_id, &None);
 
         // Request 1,000,000 stroops (exactly 1:1 ratio)
         let result = client.try_request_loan(

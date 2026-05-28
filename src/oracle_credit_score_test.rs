@@ -52,7 +52,7 @@ mod oracle_credit_score_tests {
     fn vouch_and_advance(s: &Setup, voucher: &Address, borrower: &Address, stake: i128) {
         StellarAssetClient::new(&s.env, &s.token_id).mint(voucher, &stake);
         s.env.ledger().with_mut(|l| l.timestamp = 90_000);
-        s.client.vouch(voucher, borrower, &stake, &s.token_id);
+        s.client.vouch(voucher, borrower, &stake, &s.token_id, &None);
     }
 
     // ── set_oracle ────────────────────────────────────────────────────────────

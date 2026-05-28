@@ -39,7 +39,7 @@ mod tests {
         );
 
         // Setup: Create vouches
-        contract.vouch(&env, voucher.clone(), borrower.clone(), 1_000_000_000, token.clone());
+        contract.vouch(&env, voucher.clone(), borrower.clone(), 1_000_000_000, token.clone(), None);
 
         // Verify initial state is None
         let status = contract.loan_status(&env, borrower.clone());
@@ -94,8 +94,8 @@ mod tests {
         );
 
         // Setup: Multiple vouchers
-        contract.vouch(&env, voucher1.clone(), borrower.clone(), 500_000_000, token.clone());
-        contract.vouch(&env, voucher2.clone(), borrower.clone(), 500_000_000, token.clone());
+        contract.vouch(&env, voucher1.clone(), borrower.clone(), 500_000_000, token.clone(), None);
+        contract.vouch(&env, voucher2.clone(), borrower.clone(), 500_000_000, token.clone(), None);
 
         // Request loan
         contract.request_loan(
@@ -172,6 +172,7 @@ mod tests {
                 borrower_i.clone(),
                 loan_amount * 2,
                 token.clone(),
+                None,
             );
 
             // Request loan
@@ -227,6 +228,7 @@ mod tests {
             borrower.clone(),
             stake_amount,
             token.clone(),
+            None,
         );
 
         // Request loan
@@ -287,7 +289,7 @@ mod tests {
         ];
 
         for (voucher, stake) in vouchers.iter() {
-            contract.vouch(&env, voucher.clone(), borrower.clone(), stake, token.clone());
+            contract.vouch(&env, voucher.clone(), borrower.clone(), stake, token.clone(), None);
         }
 
         // Request loan
@@ -341,7 +343,7 @@ mod tests {
             let borrower = Address::random(&env);
 
             // Vouch
-            contract.vouch(&env, voucher.clone(), borrower.clone(), 1_000_000_000, token.clone());
+            contract.vouch(&env, voucher.clone(), borrower.clone(), 1_000_000_000, token.clone(), None);
 
             // Request loan
             contract.request_loan(

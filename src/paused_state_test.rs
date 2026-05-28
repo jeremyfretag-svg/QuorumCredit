@@ -63,7 +63,7 @@ fn test_vouch_blocked_when_paused() {
     assert_eq!(client.get_paused(), true);
 
     // Try to vouch - should fail
-    let result = client.try_vouch(&voucher, &borrower, &1_000_000, &token_addr);
+    let result = client.try_vouch(&voucher, &borrower, &1_000_000, &token_addr, &None);
     assert_eq!(result, Err(Ok(ContractError::ContractPaused)));
 }
 
@@ -88,7 +88,7 @@ fn test_increase_stake_blocked_when_paused() {
     let (env, client, admin, voucher, borrower, token_addr, _token_client) = setup_test_env();
 
     // First vouch while unpaused
-    client.vouch(&voucher, &borrower, &1_000_000, &token_addr);
+    client.vouch(&voucher, &borrower, &1_000_000, &token_addr, &None);
 
     // Pause the contract
     let admin_signers = Vec::from_array(&env, [admin.clone()]);
@@ -104,7 +104,7 @@ fn test_decrease_stake_blocked_when_paused() {
     let (env, client, admin, voucher, borrower, token_addr, _token_client) = setup_test_env();
 
     // First vouch while unpaused
-    client.vouch(&voucher, &borrower, &1_000_000, &token_addr);
+    client.vouch(&voucher, &borrower, &1_000_000, &token_addr, &None);
 
     // Pause the contract
     let admin_signers = Vec::from_array(&env, [admin.clone()]);
@@ -120,7 +120,7 @@ fn test_withdraw_vouch_blocked_when_paused() {
     let (env, client, admin, voucher, borrower, token_addr, _token_client) = setup_test_env();
 
     // First vouch while unpaused
-    client.vouch(&voucher, &borrower, &1_000_000, &token_addr);
+    client.vouch(&voucher, &borrower, &1_000_000, &token_addr, &None);
 
     // Pause the contract
     let admin_signers = Vec::from_array(&env, [admin.clone()]);
@@ -138,7 +138,7 @@ fn test_transfer_vouch_blocked_when_paused() {
     let new_voucher = Address::generate(&env);
 
     // First vouch while unpaused
-    client.vouch(&voucher, &borrower, &1_000_000, &token_addr);
+    client.vouch(&voucher, &borrower, &1_000_000, &token_addr, &None);
 
     // Pause the contract
     let admin_signers = Vec::from_array(&env, [admin.clone()]);
@@ -154,7 +154,7 @@ fn test_request_loan_blocked_when_paused() {
     let (env, client, admin, voucher, borrower, token_addr, token_client) = setup_test_env();
 
     // Setup: vouch while unpaused
-    client.vouch(&voucher, &borrower, &1_000_000, &token_addr);
+    client.vouch(&voucher, &borrower, &1_000_000, &token_addr, &None);
 
     // Fund the contract for loan disbursement
     token_client.mint(
@@ -185,7 +185,7 @@ fn test_repay_blocked_when_paused() {
     let (env, client, admin, voucher, borrower, token_addr, token_client) = setup_test_env();
 
     // Setup: vouch and request loan while unpaused
-    client.vouch(&voucher, &borrower, &1_000_000, &token_addr);
+    client.vouch(&voucher, &borrower, &1_000_000, &token_addr, &None);
 
     // Fund the contract for loan disbursement
     token_client.mint(
@@ -218,7 +218,7 @@ fn test_vote_slash_blocked_when_paused() {
     let (env, client, admin, voucher, borrower, token_addr, token_client) = setup_test_env();
 
     // Setup: vouch and request loan while unpaused
-    client.vouch(&voucher, &borrower, &1_000_000, &token_addr);
+    client.vouch(&voucher, &borrower, &1_000_000, &token_addr, &None);
 
     // Fund the contract for loan disbursement
     token_client.mint(
@@ -251,7 +251,7 @@ fn test_propose_slash_blocked_when_paused() {
     let (env, client, admin, voucher, borrower, token_addr, token_client) = setup_test_env();
 
     // Setup: vouch and request loan while unpaused
-    client.vouch(&voucher, &borrower, &1_000_000, &token_addr);
+    client.vouch(&voucher, &borrower, &1_000_000, &token_addr, &None);
 
     // Fund the contract for loan disbursement
     token_client.mint(
@@ -284,7 +284,7 @@ fn test_execute_slash_proposal_blocked_when_paused() {
     let (env, client, admin, voucher, borrower, token_addr, token_client) = setup_test_env();
 
     // Setup: vouch and request loan while unpaused
-    client.vouch(&voucher, &borrower, &1_000_000, &token_addr);
+    client.vouch(&voucher, &borrower, &1_000_000, &token_addr, &None);
 
     // Fund the contract for loan disbursement
     token_client.mint(
@@ -345,7 +345,7 @@ fn test_operations_work_after_unpause() {
     assert_eq!(client.get_paused(), true);
 
     // Try to vouch - should fail
-    let result = client.try_vouch(&voucher, &borrower, &1_000_000, &token_addr);
+    let result = client.try_vouch(&voucher, &borrower, &1_000_000, &token_addr, &None);
     assert_eq!(result, Err(Ok(ContractError::ContractPaused)));
 
     // Unpause the contract
@@ -355,7 +355,7 @@ fn test_operations_work_after_unpause() {
     assert_eq!(client.get_paused(), false);
 
     // Now vouch should work
-    client.vouch(&voucher, &borrower, &1_000_000, &token_addr);
+    client.vouch(&voucher, &borrower, &1_000_000, &token_addr, &None);
 
     // Verify vouch was successful
     assert!(client.vouch_exists(&voucher, &borrower));
@@ -369,7 +369,7 @@ fn test_all_fund_moving_functions_respect_pause() {
     let new_voucher = Address::generate(&env);
 
     // Setup: create vouches and loan while unpaused
-    client.vouch(&voucher, &borrower, &1_000_000, &token_addr);
+    client.vouch(&voucher, &borrower, &1_000_000, &token_addr, &None);
 
     // Fund the contract for loan disbursement
     token_client.mint(
@@ -394,7 +394,7 @@ fn test_all_fund_moving_functions_respect_pause() {
 
     // Test all fund-moving functions are blocked
     assert_eq!(
-        client.try_vouch(&voucher, &Address::generate(&env), &1_000_000, &token_addr),
+        client.try_vouch(&voucher, &Address::generate(&env), &1_000_000, &token_addr, &None),
         Err(Ok(ContractError::ContractPaused))
     );
 

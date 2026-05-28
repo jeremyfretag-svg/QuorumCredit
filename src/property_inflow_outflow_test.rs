@@ -79,7 +79,7 @@ mod property_inflow_outflow_tests {
         let stake = 1_000_000i128;
 
         mint(&s, &voucher, stake);
-        s.client.vouch(&voucher, &borrower, &stake, &s.token);
+        s.client.vouch(&voucher, &borrower, &stake, &s.token, &None);
 
         assert_invariant(&s, stake, 0, "after vouch");
     }
@@ -98,7 +98,7 @@ mod property_inflow_outflow_tests {
         let mut inflow = stake + loan;
         let mut outflow = 0i128;
 
-        s.client.vouch(&voucher, &borrower, &stake, &s.token);
+        s.client.vouch(&voucher, &borrower, &stake, &s.token, &None);
         assert_invariant(&s, inflow, outflow, "after vouch");
 
         s.env.ledger().with_mut(|l| l.timestamp += 61);
@@ -123,7 +123,7 @@ mod property_inflow_outflow_tests {
         let mut inflow = stake + loan;
         let mut outflow = 0i128;
 
-        s.client.vouch(&voucher, &borrower, &stake, &s.token);
+        s.client.vouch(&voucher, &borrower, &stake, &s.token, &None);
         s.env.ledger().with_mut(|l| l.timestamp += 61);
         s.client.request_loan(&borrower, &loan, &stake, &purpose(&s.env), &s.token);
         outflow += loan;
@@ -154,7 +154,7 @@ mod property_inflow_outflow_tests {
         let mut inflow = stake + loan;
         let mut outflow = 0i128;
 
-        s.client.vouch(&voucher, &borrower, &stake, &s.token);
+        s.client.vouch(&voucher, &borrower, &stake, &s.token, &None);
         s.env.ledger().with_mut(|l| l.timestamp += 61);
         s.client.request_loan(&borrower, &loan, &stake, &purpose(&s.env), &s.token);
         outflow += loan;
@@ -192,7 +192,7 @@ mod property_inflow_outflow_tests {
             let total_owed = loan + yield_amt;
 
             mint(&s, &voucher, stake);
-            s.client.vouch(&voucher, &borrower, &stake, &s.token);
+            s.client.vouch(&voucher, &borrower, &stake, &s.token, &None);
             inflow += stake;
             assert_invariant(&s, inflow, outflow, "after vouch");
 

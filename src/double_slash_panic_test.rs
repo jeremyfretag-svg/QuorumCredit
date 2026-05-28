@@ -58,7 +58,7 @@ mod double_slash_panic_tests {
         let borrower = Address::generate(&s.env);
 
         StellarAssetClient::new(&s.env, &s.token).mint(&voucher, &1_000_000);
-        s.client.vouch(&voucher, &borrower, &1_000_000, &s.token);
+        s.client.vouch(&voucher, &borrower, &1_000_000, &s.token, &None);
         s.client.request_loan(
             &borrower,
             &100_000,
@@ -133,7 +133,7 @@ mod double_slash_panic_tests {
         let voucher = Address::generate(&s.env);
         let borrower = Address::generate(&s.env);
         StellarAssetClient::new(&s.env, &s.token).mint(&voucher, &1_000_000);
-        s.client.vouch(&voucher, &borrower, &1_000_000, &s.token);
+        s.client.vouch(&voucher, &borrower, &1_000_000, &s.token, &None);
 
         let result = s.client.try_vote_slash(&voucher, &borrower, &true);
         assert!(

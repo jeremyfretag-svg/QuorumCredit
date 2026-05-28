@@ -179,6 +179,14 @@ fn request_loan_internal(
     );
     assert!(threshold > 0, "threshold must be greater than zero");
 
+    // #643: Validate loan_purpose against allowed_purposes whitelist
+    if !cfg.allowed_purposes.is_empty() {
+        let purpose_allowed = cfg.allowed_purposes.iter().any(|p| p == loan_purpose);
+        if !purpose_allowed {
+            return Err(ContractError::LoanPurposeNotAllowed);
+        }
+    }
+
     let token_client = require_allowed_token(&env, &token_addr)?;
 
     let max_loan_amount: i128 = env
@@ -213,6 +221,33 @@ fn request_loan_internal(
         panic_with_error!(&env, ContractError::InsufficientFunds);
     }
 
+    // #642: Enforce sector diversification — no single sector may contribute > 50% of total stake
+    if total_stake > 0 {
+        // Count stake per sector
+        let mut sector_stakes: Vec<(soroban_sdk::String, i128)> = Vec::new(&env);
+        for v in vouches.iter() {
+            let mut found = false;
+            for i in 0..sector_stakes.len() {
+                let (s, stake_val) = sector_stakes.get(i).unwrap();
+                if s == v.sector {
+                    sector_stakes.set(i, (s, stake_val + v.amount));
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                sector_stakes.push_back((v.sector.clone(), v.amount));
+            }
+        }
+        for i in 0..sector_stakes.len() {
+            let (_, sector_stake) = sector_stakes.get(i).unwrap();
+            // Reject if any sector contributes more than 50% of total stake
+            if sector_stake * 2 > total_stake {
+                return Err(ContractError::SectorConcentrationTooHigh);
+            }
+        }
+    }
+
     let deadline = now + cfg.loan_duration;
 
     let loan_id = next_loan_id(&env);
@@ -223,7 +258,20 @@ fn request_loan_internal(
     let yield_bps = calculate_dynamic_yield(&env, &borrower, &cfg);
     let dynamic_slash_bps = calculate_dynamic_slash(&env, &borrower, &cfg);
 
-    let total_yield = bps_of(amount, yield_bps as u64);
+    let total_yield = bps_of(amount, yield_bps);
+
+    // #644: Collect insurance premium if configured
+    if cfg.insurance_premium_bps > 0 {
+        let premium = bps_of(amount, cfg.insurance_premium_bps);
+        if premium > 0 {
+            // Transfer premium from borrower to contract (held in insurance pool)
+            token_client.transfer(&borrower, &env.current_contract_address(), &premium);
+            // Add to insurance pool balance
+            let pool_key = DataKey::InsurancePool;
+            let pool_balance: i128 = env.storage().instance().get(&pool_key).unwrap_or(0);
+            env.storage().instance().set(&pool_key, &(pool_balance + premium));
+        }
+    }
 
     // Default to Personal category if not specified
     let loan_category = LoanCategory::Personal;

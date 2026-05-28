@@ -48,6 +48,8 @@ pub const DEFAULT_MAX_LOAN_TO_STAKE_RATIO: u32 = 150;
 pub const DEFAULT_VOUCH_COOLDOWN_SECS: u64 = 24 * 60 * 60; // 24 hours
 /// Default maximum number of vouchers that may back a single borrower.
 pub const DEFAULT_MAX_VOUCHERS_PER_BORROWER: u32 = 50;
+/// Default governance voting period for slash-threshold proposals, in seconds (7 days).
+pub const DEFAULT_VOTING_PERIOD_SECONDS: u64 = 7 * 24 * 60 * 60;
 /// Minimum delay before a timelocked governance action may be executed, in seconds (24 hours).
 pub const TIMELOCK_DELAY: u64 = 24 * 60 * 60;
 /// Maximum window after `eta` within which a timelocked action must be executed, in seconds (72 hours).
@@ -57,11 +59,24 @@ pub const TIMELOCK_EXPIRY: u64 = 72 * 60 * 60;
 /// immediately withdraws.
 pub const MIN_VOUCH_LOCK_PERIOD: u64 = 7 * 24 * 60 * 60;
 
+/// Fraction of slashed funds routed to the insurance pool (2000 = 20%).
+pub const SLASH_TO_INSURANCE_BPS: u32 = 2_000;
+/// Default insurance fee on loan disbursement (50 = 0.5%).
+pub const DEFAULT_INSURANCE_FEE_BPS: u32 = 50;
+/// Default max insurance payout as % of slashed stake (2500 = 25%).
+pub const DEFAULT_INSURANCE_COVERAGE_BPS: u32 = 2_500;
+
 /// Extension fee charged when a borrower requests a loan extension, in basis points (100 = 1%).
 pub const EXTENSION_FEE_BPS: i128 = 100;
 
 /// Maximum number of extensions allowed per loan.
 pub const MAX_EXTENSIONS_PER_LOAN: u32 = 2;
+
+/// Default liquidity mining reward rate in basis points per epoch (50 = 0.5% per 7 days).
+pub const DEFAULT_LIQUIDITY_MINING_RATE_BPS: u32 = 50;
+
+/// Default dynamic slash threshold setting (false = disabled by default).
+pub const DEFAULT_DYNAMIC_SLASH_THRESHOLD: bool = false;
 
 /// Timelock delay for decrease_stake during an active loan, in seconds (7 days).
 pub const DECREASE_STAKE_TIMELOCK: u64 = 7 * 24 * 60 * 60;
@@ -69,11 +84,29 @@ pub const DECREASE_STAKE_TIMELOCK: u64 = 7 * 24 * 60 * 60;
 /// Withdrawal request timelock delay, in seconds (24 hours).
 pub const WITHDRAWAL_TIMELOCK_DELAY: u64 = 24 * 60 * 60;
 
+/// Maximum number of deferment periods allowed per loan.
+pub const MAX_DEFERMENT_PERIODS: u32 = 3;
+
+/// Duration of each deferment period, in seconds (30 days).
+pub const DEFERMENT_PERIOD_SECS: u64 = 30 * 24 * 60 * 60;
+
 /// Penalty applied to partial mid-loan withdrawals, in basis points (1000 = 10%).
 pub const PARTIAL_WITHDRAWAL_PENALTY_BPS: i128 = 1_000;
 
 /// Maximum fraction of stake that can be partially withdrawn during an active loan (50%).
 pub const PARTIAL_WITHDRAWAL_MAX_BPS: i128 = 5_000;
+
+/// Minimum slash threshold when protocol health is excellent, in basis points (2500 = 25%).
+pub const MIN_DYNAMIC_SLASH_BPS: i128 = 2_500;
+
+/// Maximum slash threshold when protocol health is poor, in basis points (7500 = 75%).
+pub const MAX_DYNAMIC_SLASH_BPS: i128 = 7_500;
+
+/// Health threshold below which slash penalty increases, in basis points (8000 = 80%).
+pub const HEALTH_THRESHOLD_BPS: i128 = 8_000;
+
+/// Default slash delay period to allow for disputes, in seconds (7 days).
+pub const DEFAULT_SLASH_DELAY_SECONDS: u64 = 7 * 24 * 60 * 60;
 
 // ── Loan Extension ────────────────────────────────────────────────────────────
 
@@ -112,6 +145,16 @@ pub enum LoanStatus {
     Defaulted,
     /// #664: Default was forgiven by admin.
     ForgivenDefault,
+}
+
+/// Interest rate type for a loan.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RateType {
+    /// Fixed rate locked at disbursement (yield_bps from Config).
+    Fixed,
+    /// Variable rate tied to an external index; recalculated on each repayment.
+    Variable,
 }
 
 // ── Storage Keys ──────────────────────────────────────────────────────────────
@@ -165,15 +208,27 @@ pub enum DataKey {
     InsuranceVoucherClaim(u64, Address), // (loan_id, voucher) → i128 amount already claimed
     VouchHistory(Address, Address, Address), // (borrower, voucher, token) → Vec<VouchHistoryEntry>
     VouchDelegation(Address, Address, Address), // (borrower, original_voucher, token) → Address (delegate)
+    PendingSlashExecution(Address), // borrower → PendingSlashRecord
     YieldReserve,            // i128 balance of the yield reserve
     SlashEscrow(Address),    // borrower → (i128 amount, u64 release_timestamp)
-    SlashAudit(Address),     // borrower → SlashAuditRecord
+    SlashAudit(Address),     // borrower → SlashRecord (latest slash for borrower)
+    SlashRecord(u64),        // slash_id → SlashRecord
+    SlashRecordCounter,      // u64 monotonic slash ID counter
+    BorrowerRegistered(Address), // borrower → registration timestamp
     // Issue #598-601 additions
     PrepaymentPenaltyBps,    // u32: prepayment penalty in basis points
     YieldDistribution(u64),  // loan_id → Vec<YieldDistributionEntry>
     AdminAction(u64),        // action_id → AdminActionProposal
     AdminActionCounter,      // u64: monotonically increasing admin action ID
     SlashAppeal(Address, Address), // (borrower, voucher) → SlashAppealRecord
+    /// Slash-threshold governance proposal id → proposal record.
+    SlashThresholdProposal(u64),
+    SlashThresholdProposalCounter,
+    /// Per-borrower timestamp of the last successful slash.
+    LastSlashedAt(Address),
+    /// Admin config-update proposal id → proposal record.
+    ConfigUpdateProposal(u64),
+    ConfigUpdateProposalCounter,
     /// Issue #599/#600: (voucher, borrower) → WithdrawalRequest (pending timelock withdrawal)
     PendingWithdrawal(Address, Address),
     /// Issue #601: borrower → LoanExtensionRequest
@@ -192,10 +247,12 @@ pub enum DataKey {
     StakingDerivative(Address, Address),
     // #637: Fraud Detection
     VoucherFraudScore(Address),
-    // #663: Partial default count per borrower
-    PartialDefaultCount(Address),
-    // #664: Slash record with forgiveness info per loan
-    SlashRecord(u64),
+    // #667: Oracle address for repayment verification
+    OracleAddress,
+    // #667: External credit score per borrower
+    ExternalCreditScore(Address),
+    // #666: Escrowed repayment amount per borrower (held pending oracle verification)
+    EscrowAmount(Address),
 }
 
 // ── Governance ────────────────────────────────────────────────────────────────
@@ -212,6 +269,39 @@ pub struct SlashVoteRecord {
     /// Addresses that have already cast a vote on this proposal.
     pub voters: Vec<Address>,
     /// `true` once the slash has been auto-executed after quorum was reached.
+    pub executed: bool,
+}
+
+/// Governance proposal to change the protocol slash threshold (`Config.slash_bps`).
+#[contracttype]
+#[derive(Clone)]
+pub struct SlashThresholdProposal {
+    pub id: u64,
+    pub proposer: Address,
+    pub proposed_threshold: i128,
+    pub proposed_at: u64,
+    pub approve_votes: u32,
+    pub reject_votes: u32,
+    pub voters: Vec<Address>,
+    pub finalized: bool,
+}
+
+/// Config field targeted by an admin config-update proposal.
+#[contracttype]
+#[derive(Clone)]
+pub enum ConfigUpdateKey {
+    AdminThreshold,
+}
+
+/// Multi-sig admin proposal to update a config field.
+#[contracttype]
+#[derive(Clone)]
+pub struct ConfigUpdateProposal {
+    pub id: u64,
+    pub proposer: Address,
+    pub key: ConfigUpdateKey,
+    pub new_value: u32,
+    pub approvals: Vec<Address>,
     pub executed: bool,
 }
 
@@ -249,10 +339,12 @@ pub struct Config {
     pub prepayment_penalty_bps: u32,
     /// #634: Liquidity mining reward rate in basis points per epoch (e.g. 50 = 0.5% per 7 days).
     pub liquidity_mining_rate_bps: u32,
-    /// #663: Minimum repayment fraction (in basis points) below which a loan is considered a
-    /// partial default. E.g. 5000 = 50% — if borrower repays less than 50% of total owed,
-    /// the loan is marked PartialDefault instead of Defaulted. 0 = feature disabled.
-    pub partial_default_threshold_bps: u32,
+    /// Voting period for slash-threshold governance proposals, in seconds.
+    pub voting_period_seconds: u64,
+    /// Minimum seconds between slashes for the same borrower (0 = disabled).
+    pub slash_cooldown_seconds: u64,
+    /// When true, critical write paths are blocked until multi-sig emergency unpause.
+    pub emergency_pause_enabled: bool,
 }
 
 // ── Data Types ────────────────────────────────────────────────────────────────
@@ -297,6 +389,16 @@ pub struct LoanRecord {
     pub reminder_sent: bool,
     /// Risk score for the borrower (0-100), used for dynamic yield calculation.
     pub risk_score: u32,
+    /// Number of payment deferment periods used on this loan.
+    pub deferment_periods: u32,
+    /// Optional custom maturity date (ledger timestamp). When set, overrides the
+    /// default `deadline` computed from `loan_duration`. `None` means use `deadline`.
+    pub maturity_date: Option<u64>,
+    /// Interest rate type for this loan.
+    pub rate_type: RateType,
+    /// For variable-rate loans: the oracle key or index name used to look up the
+    /// current rate (e.g. `"SOFR"`, `"PRIME"`). `None` for fixed-rate loans.
+    pub index_reference: Option<soroban_sdk::String>,
 }
 
 /// A single payment event recorded against a loan.
@@ -325,6 +427,23 @@ pub struct VouchRecord {
     pub expiry_timestamp: Option<u64>,
     /// Optional delegate address; if set, this address can manage the vouch.
     pub delegate: Option<Address>,
+    /// Optional chain ID for cross-chain vouches. `None` means native Stellar.
+    /// When set, the token must originate from a registered bridge for that chain.
+    pub chain_id: Option<u32>,
+}
+
+/// Metadata for a registered cross-chain bridge.
+#[contracttype]
+#[derive(Clone)]
+pub struct BridgeRecord {
+    /// Numeric chain identifier (e.g. 1 = Ethereum mainnet, 137 = Polygon).
+    pub chain_id: u32,
+    /// Human-readable chain name (e.g. "ethereum", "polygon").
+    pub chain_name: soroban_sdk::String,
+    /// The Stellar-side bridge contract address that wraps/unwraps tokens.
+    pub bridge_address: Address,
+    /// Whether this bridge is currently active and accepted for new vouches.
+    pub active: bool,
 }
 
 #[contracttype]
@@ -374,11 +493,19 @@ pub enum TimelockAction {
 
 #[contracttype]
 #[derive(Clone)]
-pub struct SlashAuditRecord {
+pub struct SlashRecord {
+    pub slash_id: u64,
     pub borrower: Address,
+    pub loan_id: u64,
     pub loan_amount: i128,
     pub total_slashed: i128,
     pub slash_timestamp: u64,
+    /// Amount returned to borrower from treasury on full repay (0 until recovered).
+    pub recovery_amount: i128,
+    /// Set by admin on reversal; None when not reversed.
+    pub reversal_reason: Option<soroban_sdk::String>,
+    /// True once an admin has reversed this slash.
+    pub reversed: bool,
 }
 
 #[contracttype]
@@ -482,6 +609,20 @@ pub struct VoucherStats {
     pub total_slashed: i128,
 }
 
+// ── Issue #635: Vouch Snapshot ────────────────────────────────────────────────
+
+/// A single entry in a governance vouch snapshot.
+#[contracttype]
+#[derive(Clone)]
+pub struct VouchSnapshotEntry {
+    /// The borrower whose vouches are snapshotted.
+    pub borrower: Address,
+    /// Total stake vouched for this borrower at snapshot time, in stroops.
+    pub total_stake: i128,
+    /// Number of active vouchers at snapshot time.
+    pub voucher_count: u32,
+}
+
 // ── Pause Mode ────────────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -544,24 +685,16 @@ pub const FRAUD_SCORE_MAX: u32 = 100;
 pub const FRAUD_SCORE_DEFAULT_WEIGHT: u32 = 20;
 pub const FRAUD_SCORE_CONCENTRATION_WEIGHT: u32 = 10;
 
-// ── #664: Slash Record with Forgiveness ───────────────────────────────────────
+// ── #667: External Credit Score ───────────────────────────────────────────────
 
-/// Records a slash event against a loan, including optional forgiveness info.
+/// Credit score record pushed by a trusted oracle.
 #[contracttype]
 #[derive(Clone)]
-pub struct SlashRecord {
-    /// Loan ID that was slashed.
-    pub loan_id: u64,
-    /// Borrower address.
-    pub borrower: Address,
-    /// Total amount slashed across all vouchers, in stroops.
-    pub total_slashed: i128,
-    /// Ledger timestamp when the slash occurred.
-    pub slash_timestamp: u64,
-    /// Whether this slash has been forgiven by an admin.
-    pub forgiven: bool,
-    /// Admin-supplied reason for forgiveness (empty string if not forgiven).
-    pub forgiveness_reason: soroban_sdk::String,
-    /// Timestamp when forgiveness was granted (0 if not forgiven).
-    pub forgiven_at: u64,
+pub struct ExternalCreditScore {
+    /// Score in range 0–1000.
+    pub score: u32,
+    /// Ledger timestamp when this score was last updated.
+    pub updated_at: u64,
+    /// Oracle address that submitted this score.
+    pub oracle: Address,
 }

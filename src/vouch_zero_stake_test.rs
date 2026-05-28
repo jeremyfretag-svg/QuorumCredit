@@ -25,7 +25,7 @@ mod vouch_zero_stake_tests {
         let (contract_id, token_id, voucher, borrower) = setup(&env);
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
-        let result = client.try_vouch(&voucher, &borrower, &0, &token_id);
+        let result = client.try_vouch(&voucher, &borrower, &0, &token_id, &None);
         assert_eq!(result, Err(Ok(ContractError::InsufficientFunds)));
     }
 }

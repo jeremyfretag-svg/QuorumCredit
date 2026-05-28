@@ -46,7 +46,7 @@ mod request_loan_stake_threshold_tests {
 
         // Step 1: Voucher A vouches with 1,000,000 stroops.
         StellarAssetClient::new(&s.env, &s.token_id).mint(&voucher_a, &1_000_000);
-        s.client.vouch(&voucher_a, &borrower, &1_000_000, &s.token_id);
+        s.client.vouch(&voucher_a, &borrower, &1_000_000, &s.token_id, &None);
 
         // Step 2: Attempt loan with threshold of 2,000,000 stroops.
         let result = s.client.try_request_loan(
@@ -74,7 +74,7 @@ mod request_loan_stake_threshold_tests {
 
         // Step 1: Voucher A vouches with 1,000,000 stroops.
         StellarAssetClient::new(&s.env, &s.token_id).mint(&voucher_a, &1_000_000);
-        s.client.vouch(&voucher_a, &borrower, &1_000_000, &s.token_id);
+        s.client.vouch(&voucher_a, &borrower, &1_000_000, &s.token_id, &None);
 
         // Step 4: Request with threshold of 1,000,000 stroops — must succeed.
         let result = s.client.try_request_loan(

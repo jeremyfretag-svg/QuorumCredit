@@ -32,7 +32,7 @@ mod vouch_min_stake_tests {
         let (contract_id, token_id, voucher, borrower) = setup(&env);
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
-        let result = client.try_vouch(&voucher, &borrower, &(DEFAULT_MIN_YIELD_STAKE - 1), &token_id);
+        let result = client.try_vouch(&voucher, &borrower, &(DEFAULT_MIN_YIELD_STAKE - 1), &token_id, &None);
         assert_eq!(result, Err(Ok(ContractError::MinStakeNotMet)));
     }
 
@@ -44,7 +44,7 @@ mod vouch_min_stake_tests {
         let (contract_id, token_id, voucher, borrower) = setup(&env);
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
-        let result = client.try_vouch(&voucher, &borrower, &DEFAULT_MIN_YIELD_STAKE, &token_id);
+        let result = client.try_vouch(&voucher, &borrower, &DEFAULT_MIN_YIELD_STAKE, &token_id, &None);
         assert!(result.is_ok());
     }
 }

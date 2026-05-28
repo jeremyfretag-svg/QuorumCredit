@@ -42,7 +42,7 @@ mod referral_tests {
 
     fn do_vouch(s: &Setup, voucher: &Address, borrower: &Address, stake: i128) {
         StellarAssetClient::new(&s.env, &s.token).mint(voucher, &stake);
-        s.client.vouch(voucher, borrower, &stake, &s.token);
+        s.client.vouch(voucher, borrower, &stake, &s.token, &None);
     }
 
     fn do_loan(s: &Setup, borrower: &Address, amount: i128) {
@@ -168,7 +168,7 @@ mod referral_tests {
         let voucher = Address::generate(&env);
 
         StellarAssetClient::new(&env, &token_id.address()).mint(&voucher, &1_000_000);
-        client.vouch(&voucher, &borrower, &1_000_000, &token_id.address());
+        client.vouch(&voucher, &borrower, &1_000_000, &token_id.address(), &None);
         client.register_referral(&borrower, &referrer);
         client.request_loan(
             &borrower,

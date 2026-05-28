@@ -57,7 +57,7 @@ mod insurance_pool_tests {
         let voucher = Address::generate(&env);
 
         StellarAssetClient::new(&env, &token_id.address()).mint(&voucher, &10_000_000);
-        client.vouch(&voucher, &borrower, &10_000_000, &token_id.address());
+        client.vouch(&voucher, &borrower, &10_000_000, &token_id.address(), &None);
 
         Setup { env, client, token_id: token_id.address(), admin, borrower, voucher }
     }

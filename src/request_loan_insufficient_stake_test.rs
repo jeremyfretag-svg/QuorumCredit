@@ -30,7 +30,7 @@ mod request_loan_insufficient_stake_tests {
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
         // Vouch with 100_000 stake but request loan with threshold of 500_000
-        client.vouch(&voucher, &borrower, &100_000, &token_id);
+        client.vouch(&voucher, &borrower, &100_000, &token_id, &None);
 
         let result = client.try_request_loan(
             &borrower,

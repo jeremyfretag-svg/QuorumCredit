@@ -49,7 +49,7 @@ mod fuzz_request_loan_tests {
         let voucher = Address::generate(&s.env);
         let borrower = Address::generate(&s.env);
         StellarAssetClient::new(&s.env, &s.token).mint(&voucher, &stake);
-        s.client.vouch(&voucher, &borrower, &stake, &s.token);
+        s.client.vouch(&voucher, &borrower, &stake, &s.token, &None);
         // Advance past MIN_VOUCH_AGE.
         s.env.ledger().with_mut(|l| l.timestamp += 61);
         StellarAssetClient::new(&s.env, &s.token).mint(&s.client.address, &fund);

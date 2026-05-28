@@ -53,7 +53,7 @@ mod insufficient_balance_tests {
 
         // Fund voucher and vouch — stake is transferred into the contract.
         StellarAssetClient::new(&s.env, &s.token).mint(&voucher, &stake);
-        s.client.vouch(&voucher, &borrower, &stake, &s.token);
+        s.client.vouch(&voucher, &borrower, &stake, &s.token, &None);
 
         // Advance time past MIN_VOUCH_AGE (60s) so the vouch is eligible.
         s.env.ledger().with_mut(|l| l.timestamp += 61);

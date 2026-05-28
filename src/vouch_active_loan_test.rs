@@ -40,7 +40,7 @@ mod vouch_active_loan_tests {
 
     fn mint_and_vouch(s: &Setup, voucher: &Address, borrower: &Address, stake: i128) {
         StellarAssetClient::new(&s.env, &s.token_id).mint(voucher, &stake);
-        s.client.vouch(voucher, borrower, &stake, &s.token_id);
+        s.client.vouch(voucher, borrower, &stake, &s.token_id, &None);
     }
 
     /// vouch() must return ActiveLoanExists when the borrower already has an active loan.
@@ -63,7 +63,7 @@ mod vouch_active_loan_tests {
 
         // Step 2: Attempt to add a new vouch while loan is active.
         StellarAssetClient::new(&s.env, &s.token_id).mint(&voucher2, &500_000);
-        let result = s.client.try_vouch(&voucher2, &borrower, &500_000, &s.token_id);
+        let result = s.client.try_vouch(&voucher2, &borrower, &500_000, &s.token_id, &None);
 
         // Step 3: Assert ActiveLoanExists is returned.
         assert_eq!(
@@ -101,7 +101,7 @@ mod vouch_active_loan_tests {
 
         // Step 5: Attempt to add a new vouch — must succeed.
         StellarAssetClient::new(&s.env, &s.token_id).mint(&voucher2, &500_000);
-        let result = s.client.try_vouch(&voucher2, &borrower, &500_000, &s.token_id);
+        let result = s.client.try_vouch(&voucher2, &borrower, &500_000, &s.token_id, &None);
         assert!(result.is_ok(), "vouch() must succeed after loan is repaid");
     }
 }

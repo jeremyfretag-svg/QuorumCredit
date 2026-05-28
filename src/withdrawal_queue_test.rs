@@ -53,7 +53,7 @@ mod withdrawal_queue_tests {
 
         // Mint and vouch
         StellarAssetClient::new(&env, &token_id.address()).mint(&voucher, &10_000_000);
-        client.vouch(&voucher, &borrower, &10_000_000, &token_id.address());
+        client.vouch(&voucher, &borrower, &10_000_000, &token_id.address(), &None);
 
         Setup {
             env,
@@ -263,7 +263,7 @@ mod withdrawal_queue_tests {
         let voucher2 = Address::generate(&s.env);
         StellarAssetClient::new(&s.env, &s.token_id).mint(&voucher2, &5_000_000);
         s.env.ledger().with_mut(|l| l.timestamp += 120);
-        s.client.vouch(&voucher2, &s.borrower, &5_000_000, &s.token_id);
+        s.client.vouch(&voucher2, &s.borrower, &5_000_000, &s.token_id, &None);
 
         disburse_loan(&s);
 

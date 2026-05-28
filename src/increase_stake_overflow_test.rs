@@ -39,6 +39,9 @@ mod increase_stake_overflow_tests {
                 stake: initial_stake,
                 vouch_timestamp: 0,
                 token: token_id.clone(),
+                expiry_timestamp: None,
+                delegate: None,
+                chain_id: 0,
             });
             env.storage()
                 .persistent()

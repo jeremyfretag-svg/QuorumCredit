@@ -33,7 +33,7 @@ mod max_loan_amount_tests {
         let (contract_id, token_id, _admin, voucher, borrower) = setup(&env);
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
-        client.vouch(&voucher, &borrower, &5_000_000, &token_id);
+        client.vouch(&voucher, &borrower, &5_000_000, &token_id, &None);
 
         let result = client.try_request_loan(
             &borrower,
@@ -54,7 +54,7 @@ mod max_loan_amount_tests {
         let (contract_id, token_id, _admin, voucher, borrower) = setup(&env);
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
-        client.vouch(&voucher, &borrower, &5_000_000, &token_id);
+        client.vouch(&voucher, &borrower, &5_000_000, &token_id, &None);
 
         let result = client.try_request_loan(
             &borrower,

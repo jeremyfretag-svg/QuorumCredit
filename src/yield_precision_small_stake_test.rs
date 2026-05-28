@@ -48,7 +48,7 @@ mod yield_precision_small_stake_tests {
 
     fn do_vouch(s: &Setup, voucher: &Address, borrower: &Address, stake: i128) {
         StellarAssetClient::new(&s.env, &s.token_id).mint(voucher, &stake);
-        s.client.vouch(voucher, borrower, &stake, &s.token_id);
+        s.client.vouch(voucher, borrower, &stake, &s.token_id, &None);
     }
 
     /// Test core issue: stake=49 stroops (<50) produces 0 yield due to truncation.

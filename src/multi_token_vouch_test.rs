@@ -39,11 +39,11 @@ mod multi_token_vouch_tests {
 
         // Voucher A vouches with XLM
         StellarAssetClient::new(&env, &xlm_id.address()).mint(&voucher_a, &1_000_000);
-        client.vouch(&voucher_a, &borrower, &1_000_000, &xlm_id.address());
+        client.vouch(&voucher_a, &borrower, &1_000_000, &xlm_id.address(), &None);
 
         // Voucher B vouches with USDC
         StellarAssetClient::new(&env, &usdc_id.address()).mint(&voucher_b, &1_000_000);
-        client.vouch(&voucher_b, &borrower, &1_000_000, &usdc_id.address());
+        client.vouch(&voucher_b, &borrower, &1_000_000, &usdc_id.address(), &None);
 
         // Assert both vouches are recorded with the correct token
         let vouches = client.get_vouches(&borrower);

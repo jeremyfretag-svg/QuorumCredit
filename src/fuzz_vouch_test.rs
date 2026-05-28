@@ -61,7 +61,7 @@ mod fuzz_vouch_tests {
                 StellarAssetClient::new(&env, &token_id.address()).mint(&voucher, &stake);
             }
 
-            let result = client.try_vouch(&voucher, &borrower, &stake, &token_id.address());
+            let result = client.try_vouch(&voucher, &borrower, &stake, &token_id.address(), &None);
 
             match stake {
                 s if s <= 0 => {

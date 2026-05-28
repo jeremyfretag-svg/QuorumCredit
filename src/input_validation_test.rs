@@ -95,7 +95,7 @@ mod input_validation_tests {
 
         // Give voucher some tokens and vouch (but no loan is ever requested)
         StellarAssetClient::new(&env, &token_id).mint(&voucher, &1_000_000);
-        client.vouch(&voucher, &borrower, &1_000_000, &token_id);
+        client.vouch(&voucher, &borrower, &1_000_000, &token_id, &None);
 
         // borrower has no active loan → vote_slash must fail
         let result = client.try_vote_slash(&voucher, &borrower, &true);
@@ -117,7 +117,7 @@ mod input_validation_tests {
         let voucher = Address::generate(&env);
         let borrower = Address::generate(&env);
 
-        let result = client.try_vouch(&voucher, &borrower, &0i128, &token_id);
+        let result = client.try_vouch(&voucher, &borrower, &0i128, &token_id, &None);
         assert_eq!(
             result,
             Err(Ok(ContractError::InsufficientFunds)),
@@ -134,7 +134,7 @@ mod input_validation_tests {
         let voucher = Address::generate(&env);
         let borrower = Address::generate(&env);
 
-        let result = client.try_vouch(&voucher, &borrower, &-1_000_000i128, &token_id);
+        let result = client.try_vouch(&voucher, &borrower, &-1_000_000i128, &token_id, &None);
         assert_eq!(
             result,
             Err(Ok(ContractError::InsufficientFunds)),
@@ -154,7 +154,7 @@ mod input_validation_tests {
         let borrower = Address::generate(&env);
 
         StellarAssetClient::new(&env, &token_id).mint(&voucher, &1_000_000);
-        client.vouch(&voucher, &borrower, &1_000_000, &token_id);
+        client.vouch(&voucher, &borrower, &1_000_000, &token_id, &None);
 
         let result = client.try_increase_stake(&voucher, &borrower, &0i128);
         assert_eq!(
@@ -174,7 +174,7 @@ mod input_validation_tests {
         let borrower = Address::generate(&env);
 
         StellarAssetClient::new(&env, &token_id).mint(&voucher, &1_000_000);
-        client.vouch(&voucher, &borrower, &1_000_000, &token_id);
+        client.vouch(&voucher, &borrower, &1_000_000, &token_id, &None);
 
         let result = client.try_increase_stake(&voucher, &borrower, &-500_000i128);
         assert_eq!(

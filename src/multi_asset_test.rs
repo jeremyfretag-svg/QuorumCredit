@@ -56,7 +56,7 @@ mod multi_asset_tests {
         let borrower = Address::generate(&s.env);
 
         StellarAssetClient::new(&s.env, &s.usdc).mint(&voucher, &1_000_000);
-        s.client.vouch(&voucher, &borrower, &1_000_000, &s.usdc);
+        s.client.vouch(&voucher, &borrower, &1_000_000, &s.usdc, &None);
         s.client
             .request_loan(&borrower, &100_000, &500_000, &purpose(&s.env), &s.usdc);
 
@@ -72,7 +72,7 @@ mod multi_asset_tests {
         let borrower = Address::generate(&s.env);
 
         StellarAssetClient::new(&s.env, &s.xlm).mint(&voucher, &1_000_000);
-        s.client.vouch(&voucher, &borrower, &1_000_000, &s.xlm);
+        s.client.vouch(&voucher, &borrower, &1_000_000, &s.xlm, &None);
 
         let result =
             s.client
@@ -89,7 +89,7 @@ mod multi_asset_tests {
 
         let result = s
             .client
-            .try_vouch(&voucher, &borrower, &100_000, &random_token);
+            .try_vouch(&voucher, &borrower, &100_000, &random_token, &None);
         assert_eq!(result, Err(Ok(ContractError::InvalidToken)));
     }
 
@@ -117,7 +117,7 @@ mod multi_asset_tests {
 
         let voucher = Address::generate(&s.env);
         let borrower = Address::generate(&s.env);
-        let result = s.client.try_vouch(&voucher, &borrower, &100_000, &s.usdc);
+        let result = s.client.try_vouch(&voucher, &borrower, &100_000, &s.usdc, &None);
         assert_eq!(result, Err(Ok(ContractError::InvalidToken)));
     }
 
@@ -128,7 +128,7 @@ mod multi_asset_tests {
         let borrower = Address::generate(&s.env);
 
         StellarAssetClient::new(&s.env, &s.xlm).mint(&voucher, &1_000_000);
-        s.client.vouch(&voucher, &borrower, &1_000_000, &s.xlm);
+        s.client.vouch(&voucher, &borrower, &1_000_000, &s.xlm, &None);
         s.client
             .request_loan(&borrower, &100_000, &500_000, &purpose(&s.env), &s.xlm);
 

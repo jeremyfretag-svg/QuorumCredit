@@ -30,7 +30,7 @@ mod min_loan_amount_tests {
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
         // Vouch with sufficient stake
-        client.vouch(&voucher, &borrower, &500_000, &token_id);
+        client.vouch(&voucher, &borrower, &500_000, &token_id, &None);
 
         // Try to request loan with amount below minimum (DEFAULT_MIN_LOAN_AMOUNT = 100_000)
         let result = client.try_request_loan(
@@ -52,7 +52,7 @@ mod min_loan_amount_tests {
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
         // Vouch with sufficient stake
-        client.vouch(&voucher, &borrower, &500_000, &token_id);
+        client.vouch(&voucher, &borrower, &500_000, &token_id, &None);
 
         // Request loan with amount exactly at minimum (DEFAULT_MIN_LOAN_AMOUNT = 100_000)
         let result = client.try_request_loan(
@@ -74,7 +74,7 @@ mod min_loan_amount_tests {
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
         // Vouch with sufficient stake
-        client.vouch(&voucher, &borrower, &500_000, &token_id);
+        client.vouch(&voucher, &borrower, &500_000, &token_id, &None);
 
         // Try to request loan with amount just below minimum
         let result = client.try_request_loan(

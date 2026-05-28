@@ -2,10 +2,10 @@ extern crate alloc;
 
 use crate::errors::ContractError;
 use crate::helpers::{
-    has_active_loan, require_allowed_token, require_not_paused, require_positive_amount,
+    has_active_loan, require_admin_approval, require_allowed_token, require_not_paused, require_positive_amount,
 };
 use crate::types::{
-    DataKey, QueuedWithdrawal, VouchHistoryEntry, VouchRecord,
+    BridgeRecord, DataKey, QueuedWithdrawal, VouchHistoryEntry, VouchRecord,
     PARTIAL_WITHDRAWAL_MAX_BPS, PARTIAL_WITHDRAWAL_PENALTY_BPS, BPS_DENOMINATOR,
 };
 use soroban_sdk::{symbol_short, token, Address, Env, Vec};
@@ -50,11 +50,49 @@ pub fn vouch(
     borrower: Address,
     stake: i128,
     token: Address,
+    chain_id: Option<u32>,
+) -> Result<(), ContractError> {
+    vouch_with_chain(env, voucher, borrower, stake, token, 0)
+}
+
+/// Vouch with cross-chain support. chain_id=0 means native Stellar.
+/// For non-zero chain_id, the voucher must have been bridge-validated first.
+pub fn vouch_cross_chain(
+    env: Env,
+    voucher: Address,
+    borrower: Address,
+    stake: i128,
+    token: Address,
+    chain_id: u32,
+) -> Result<(), ContractError> {
+    vouch_with_chain(env, voucher, borrower, stake, token, chain_id)
+}
+
+fn vouch_with_chain(
+    env: Env,
+    voucher: Address,
+    borrower: Address,
+    stake: i128,
+    token: Address,
+    chain_id: u32,
 ) -> Result<(), ContractError> {
     voucher.require_auth();
     require_not_paused(&env)?;
+
+    // Bridge validation: non-native chain vouches require prior bridge validation
+    if chain_id != 0 {
+        let validated: bool = env
+            .storage()
+            .persistent()
+            .get(&DataKey::BridgeValidated(voucher.clone(), chain_id))
+            .unwrap_or(false);
+        if !validated {
+            return Err(ContractError::BridgeNotValidated);
+        }
+    }
+
     let cfg = VouchConfig::load(&env);
-    do_vouch(&env, &cfg, voucher, borrower, stake, token)
+    do_vouch(&env, &cfg, voucher, borrower, stake, token, chain_id)
 }
 
 fn validate_vouch<'a>(
@@ -64,6 +102,7 @@ fn validate_vouch<'a>(
     borrower: &Address,
     stake: i128,
     token: &Address,
+    chain_id: Option<u32>,
 ) -> Result<(token::Client<'a>, Vec<VouchRecord>), ContractError> {
     require_positive_amount(env, stake)?;
 
@@ -92,6 +131,12 @@ fn validate_vouch<'a>(
     }
 
     let token_client = require_allowed_token(env, token)?;
+
+    // Bridge validation: if chain_id is provided, the token must originate from
+    // a registered, active bridge for that chain.
+    if let Some(cid) = chain_id {
+        validate_bridge(env, cid, token)?;
+    }
 
     if cfg.min_stake > 0 && stake < cfg.min_stake {
         return Err(ContractError::MinStakeNotMet);
@@ -143,7 +188,9 @@ fn commit_vouch(
     borrower: Address,
     stake: i128,
     token: Address,
+    chain_id: u32,
     mut vouches: Vec<VouchRecord>,
+    chain_id: Option<u32>,
 ) -> Result<(), ContractError> {
     let contract = env.current_contract_address();
 
@@ -178,6 +225,7 @@ fn commit_vouch(
         token: token.clone(),
         expiry_timestamp: None,
         delegate: None,
+        chain_id,
     });
 
     env.storage()
@@ -226,9 +274,11 @@ fn do_vouch(
     borrower: Address,
     stake: i128,
     token: Address,
+    chain_id: Option<u32>,
 ) -> Result<(), ContractError> {
+    crate::helpers::register_borrower_if_needed(env, &borrower);
     let (token_client, vouches) = validate_vouch(env, cfg, &voucher, &borrower, stake, &token)?;
-    commit_vouch(env, &token_client, voucher, borrower, stake, token, vouches)
+    commit_vouch(env, &token_client, voucher, borrower, stake, token, chain_id, vouches)
 }
 
 pub fn batch_vouch(
@@ -237,6 +287,7 @@ pub fn batch_vouch(
     borrowers: Vec<Address>,
     stakes: Vec<i128>,
     token: Address,
+    chain_id: Option<u32>,
 ) -> Result<(), ContractError> {
     voucher.require_auth();
     require_not_paused(&env)?;
@@ -251,7 +302,7 @@ pub fn batch_vouch(
     for i in 0..borrowers.len() {
         let borrower = borrowers.get(i).unwrap();
         let stake = stakes.get(i).unwrap();
-        validate_vouch(&env, &cfg, &voucher, &borrower, stake, &token)?;
+        validate_vouch(&env, &cfg, &voucher, &borrower, stake, &token, chain_id)?;
     }
 
     // Phase 2: commit all — only reached if all validations passed
@@ -264,7 +315,7 @@ pub fn batch_vouch(
             .persistent()
             .get(&DataKey::Vouches(borrower.clone()))
             .unwrap_or(Vec::new(&env));
-        commit_vouch(&env, &token_client, voucher.clone(), borrower, stake, token.clone(), vouches)?;
+        commit_vouch(&env, &token_client, voucher.clone(), borrower, stake, token.clone(), vouches, chain_id)?;
     }
 
     Ok(())
@@ -739,4 +790,112 @@ fn distribute_penalty(
             token_client.transfer(&contract, &vr.voucher, &share);
         }
     }
+}
+
+pub fn transfer_vouch(
+    _env: Env,
+    _from: Address,
+    _to: Address,
+    _borrower: Address,
+) -> Result<(), ContractError> {
+    Err(ContractError::InvalidStateTransition)
+}
+
+pub fn delegate_vouch(
+    _env: Env,
+    _voucher: Address,
+    _borrower: Address,
+    _delegate: Address,
+    _token: Address,
+) -> Result<(), ContractError> {
+    Err(ContractError::InvalidStateTransition)
+}
+
+pub fn revoke_delegation(
+    _env: Env,
+    _voucher: Address,
+    _borrower: Address,
+    _token: Address,
+) -> Result<(), ContractError> {
+    Err(ContractError::InvalidStateTransition)
+}
+
+pub fn set_vouch_expiry(
+    _env: Env,
+    _voucher: Address,
+    _borrower: Address,
+    _expiry: u64,
+    _token: Address,
+) -> Result<(), ContractError> {
+    Err(ContractError::InvalidStateTransition)
+}
+
+pub fn get_vouch_history(
+    env: Env,
+    _borrower: Address,
+    _voucher: Address,
+    _token: Address,
+) -> Vec<crate::types::VouchHistoryEntry> {
+    Vec::new(&env)
+}
+
+pub fn vouch_exists(env: Env, voucher: Address, borrower: Address) -> bool {
+    let vouches: Vec<VouchRecord> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::Vouches(borrower))
+        .unwrap_or(Vec::new(&env));
+    vouches.iter().any(|v| v.voucher == voucher)
+}
+
+pub fn voucher_history(env: Env, _voucher: Address) -> Vec<Address> {
+    Vec::new(&env)
+}
+
+pub fn get_voucher_stats(
+    env: Env,
+    voucher: Address,
+) -> crate::types::VoucherStats {
+    env.storage()
+        .persistent()
+        .get(&DataKey::VoucherStats(voucher))
+        .unwrap_or(crate::types::VoucherStats {
+            successful_vouches: 0,
+            total_vouches_slashed: 0,
+            total_yield_earned: 0,
+            total_slashed: 0,
+        })
+}
+
+pub fn total_vouched(env: Env, borrower: Address) -> Result<i128, ContractError> {
+    let cfg = crate::helpers::config(&env);
+    let vouches: Vec<VouchRecord> = env
+        .storage()
+        .persistent()
+        .get(&DataKey::Vouches(borrower))
+        .unwrap_or(Vec::new(&env));
+    let total: i128 = vouches
+        .iter()
+        .filter(|v| v.token == cfg.token)
+        .map(|v| v.stake)
+        .sum();
+    Ok(total)
+}
+
+pub fn request_vouch_withdrawal(
+    _env: Env,
+    _voucher: Address,
+    _borrower: Address,
+    _token: Address,
+) -> Result<(), ContractError> {
+    Err(ContractError::InvalidStateTransition)
+}
+
+pub fn execute_vouch_withdrawal(
+    _env: Env,
+    _voucher: Address,
+    _borrower: Address,
+    _token: Address,
+) -> Result<(), ContractError> {
+    Err(ContractError::InvalidStateTransition)
 }

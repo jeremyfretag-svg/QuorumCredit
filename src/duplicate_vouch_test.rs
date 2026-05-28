@@ -26,9 +26,9 @@ mod duplicate_vouch_tests {
         let (contract_id, token_id, voucher, borrower) = setup(&env);
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
-        client.vouch(&voucher, &borrower, &1_000_000, &token_id);
+        client.vouch(&voucher, &borrower, &1_000_000, &token_id, &None);
 
-        let result = client.try_vouch(&voucher, &borrower, &1_000_000, &token_id);
+        let result = client.try_vouch(&voucher, &borrower, &1_000_000, &token_id, &None);
         assert_eq!(result, Err(Ok(ContractError::DuplicateVouch)));
     }
 
@@ -40,7 +40,7 @@ mod duplicate_vouch_tests {
         let (contract_id, token_id, voucher, borrower) = setup(&env);
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
-        client.vouch(&voucher, &borrower, &1_000_000, &token_id);
+        client.vouch(&voucher, &borrower, &1_000_000, &token_id, &None);
 
         let result = client.try_increase_stake(&voucher, &borrower, &500_000);
         assert!(result.is_ok());

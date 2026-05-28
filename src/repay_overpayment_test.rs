@@ -39,7 +39,7 @@ mod repay_overpayment_tests {
         voucher: &Address,
         borrower: &Address,
     ) {
-        client.vouch(voucher, borrower, &5_000_000, token_id);
+        client.vouch(voucher, borrower, &5_000_000, token_id, &None);
         client.request_loan(
             borrower,
             &PRINCIPAL,

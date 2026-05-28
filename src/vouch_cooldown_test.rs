@@ -52,10 +52,10 @@ mod vouch_cooldown_tests {
         StellarAssetClient::new(&s.env, &s.token_id).mint(&voucher, &2_000_000);
 
         // First vouch succeeds
-        s.client.vouch(&voucher, &borrower1, &1_000_000, &s.token_id);
+        s.client.vouch(&voucher, &borrower1, &1_000_000, &s.token_id, &None);
 
         // Attempt second vouch immediately (within 24-hour cooldown) should fail
-        let result = s.client.try_vouch(&voucher, &borrower2, &1_000_000, &s.token_id);
+        let result = s.client.try_vouch(&voucher, &borrower2, &1_000_000, &s.token_id, &None);
         assert_eq!(result, Err(Ok(ContractError::VouchCooldownActive)));
     }
 
@@ -71,14 +71,14 @@ mod vouch_cooldown_tests {
         StellarAssetClient::new(&s.env, &s.token_id).mint(&voucher, &2_000_000);
 
         // First vouch at timestamp 120
-        s.client.vouch(&voucher, &borrower1, &1_000_000, &s.token_id);
+        s.client.vouch(&voucher, &borrower1, &1_000_000, &s.token_id, &None);
 
         // Advance time by 24 hours + 1 second (default cooldown is 24 hours)
         let cooldown_secs = 24 * 60 * 60;
         s.env.ledger().with_mut(|l| l.timestamp = 120 + cooldown_secs + 1);
 
         // Second vouch should now succeed
-        s.client.vouch(&voucher, &borrower2, &1_000_000, &s.token_id);
+        s.client.vouch(&voucher, &borrower2, &1_000_000, &s.token_id, &None);
 
         // Verify both vouches exist
         let vouches1 = s.client.get_vouches(&borrower1).unwrap();
@@ -100,10 +100,10 @@ mod vouch_cooldown_tests {
         StellarAssetClient::new(&s.env, &s.token_id).mint(&voucher2, &1_000_000);
 
         // voucher1 vouches
-        s.client.vouch(&voucher1, &borrower, &1_000_000, &s.token_id);
+        s.client.vouch(&voucher1, &borrower, &1_000_000, &s.token_id, &None);
 
         // voucher2 can vouch immediately (different voucher, no cooldown)
-        s.client.vouch(&voucher2, &borrower, &1_000_000, &s.token_id);
+        s.client.vouch(&voucher2, &borrower, &1_000_000, &s.token_id, &None);
 
         // Verify both vouches exist
         let vouches = s.client.get_vouches(&borrower).unwrap();
