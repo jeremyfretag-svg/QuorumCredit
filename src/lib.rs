@@ -82,6 +82,7 @@ impl QuorumCreditContract {
                 early_repayment_discount_bps: 0,
                 oracle_address: None,
                 slash_delay_seconds: 0,
+                successor_admin: None,
             },
         );
 
@@ -805,5 +806,17 @@ impl QuorumCreditContract {
         enabled: bool,
     ) {
         admin::set_confirmation_required(env, admin_signers, enabled)
+    }
+
+    pub fn set_successor_admin(
+        env: Env,
+        admin_signers: Vec<Address>,
+        successor: Option<Address>,
+    ) {
+        admin::set_successor_admin(env, admin_signers, successor)
+    }
+
+    pub fn claim_successor_admin(env: Env) -> Result<(), ContractError> {
+        admin::claim_successor_admin(env)
     }
 }

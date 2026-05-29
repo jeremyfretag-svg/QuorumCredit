@@ -71,6 +71,7 @@ impl QuorumCreditContract {
                 voting_period_seconds: crate::types::DEFAULT_VOTING_PERIOD_SECONDS,
                 slash_cooldown_seconds: 0,
                 emergency_pause_enabled: false,
+                successor_admin: None,
             },
         );
 

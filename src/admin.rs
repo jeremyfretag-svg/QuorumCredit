@@ -648,6 +648,55 @@ pub fn accept_admin(env: Env) -> Result<(), ContractError> {
     Ok(())
 }
 
+/// Designate a successor admin who can claim admin rights without multi-sig approval.
+/// Only the current admin set can designate a successor. Pass `None` to clear.
+pub fn set_successor_admin(
+    env: Env,
+    admin_signers: Vec<Address>,
+    successor: Option<Address>,
+) {
+    require_admin_approval(&env, &admin_signers);
+
+    if let Some(ref addr) = successor {
+        if is_admin(&env, addr) {
+            panic_with_error!(&env, ContractError::AlreadyInitialized);
+        }
+    }
+
+    let mut cfg = config(&env);
+    cfg.successor_admin = successor.clone();
+    env.storage().instance().set(&DataKey::Config, &cfg);
+
+    env.events().publish(
+        (symbol_short!("admin"), symbol_short!("successor")),
+        (admin_signers.get(0).unwrap(), successor),
+    );
+}
+
+/// Claim admin rights as the designated successor admin.
+/// The caller must match the stored `successor_admin` address and authenticate.
+/// On success, the caller is added to the admin list and the successor slot is cleared.
+pub fn claim_successor_admin(env: Env) -> Result<(), ContractError> {
+    let mut cfg = config(&env);
+    let successor = cfg
+        .successor_admin
+        .clone()
+        .ok_or(ContractError::UnauthorizedCaller)?;
+
+    successor.require_auth();
+
+    cfg.admins.push_back(successor.clone());
+    cfg.successor_admin = None;
+    env.storage().instance().set(&DataKey::Config, &cfg);
+
+    env.events().publish(
+        (symbol_short!("admin"), symbol_short!("cl_succ")),
+        successor,
+    );
+
+    Ok(())
+}
+
 pub fn set_prepayment_penalty_bps(env: Env, admin_signers: Vec<Address>, penalty_bps: u32) {
     require_admin_approval(&env, &admin_signers);
     assert!(penalty_bps <= 10_000, "penalty_bps must not exceed 10000");

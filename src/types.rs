@@ -390,6 +390,9 @@ pub struct Config {
     pub oracle_address: Option<soroban_sdk::Address>,
     /// Delay (in seconds) after a slash vote reaches quorum before it can be executed (0 = immediate).
     pub slash_delay_seconds: u64,
+    /// Designated successor admin address that can claim admin rights without multi-sig approval
+    /// when current admins are unavailable.
+    pub successor_admin: Option<Address>,
 }
 
 // ── Data Types ────────────────────────────────────────────────────────────────
